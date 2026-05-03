@@ -794,7 +794,8 @@
   background-color: #218838;
 }
 
-  @media (max-width: 1024px) {
+@media (max-width: 1024px) {
+  .cart-section {
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
