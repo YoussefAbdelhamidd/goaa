@@ -14,6 +14,8 @@ interface MenuItem {
 
 interface CartItem extends MenuItem {
   quantity: number;
+  size?: string;
+  extras?: string[];
 }
 
 interface Order {
@@ -64,6 +66,9 @@ const translations = {
     orderInstructions: 'Click on pending orders to mark as paid and print receipt.',
     paymentNote: 'All payments are processed as cash transactions.',
     cancel: 'Cancel',
+    quantity: 'Quantity',
+    size: 'Size',
+    extras: 'Extras',
     cafeReceipt: 'Cafe Receipt',
     orderNumber: 'Order #',
     paymentCash: 'Payment: Cash',
@@ -121,6 +126,9 @@ const translations = {
     orderInstructions: 'انقر على الطلبات المعلقة لتحديثها كمدفوعة وطباعة الإيصال.',
     paymentNote: 'جميع المدفوعات تتم نقدًا.',
     cancel: 'إلغاء',
+    quantity: 'الكمية',
+    size: 'الحجم',
+    extras: 'إضافات',
     cafeReceipt: 'إيصال المقهى',
     orderNumber: 'رقم الطلب',
     paymentCash: 'الدفع: نقدي',
@@ -367,28 +375,48 @@ function App() {
     }
   };
 
-  const addToCart = (item: MenuItem) => {
+  const areExtrasEqual = (a?: string[], b?: string[]) => {
+    if (!a && !b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    return a.slice().sort().join(',') === b.slice().sort().join(',');
+  };
+
+  const addToCart = (
+    item: MenuItem,
+    quantity: number = 1,
+    size?: string,
+    extras?: string[]
+  ) => {
     setCart((prevCart) => {
-      const existing = prevCart.find((cartItem) => cartItem.id === item.id);
+      const existing = prevCart.find((cartItem) =>
+        cartItem.id === item.id &&
+        cartItem.size === size &&
+        areExtrasEqual(cartItem.extras, extras)
+      );
+
       if (existing) {
         return prevCart.map((cartItem) =>
-          cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + 1 }
+          cartItem === existing
+            ? { ...cartItem, quantity: cartItem.quantity + quantity }
             : cartItem
         );
-      } else {
-        return [...prevCart, { ...item, quantity: 1 }];
       }
+
+      return [...prevCart, { ...item, quantity, size, extras }];
     });
   };
 
-  const removeFromCart = (id: number) => {
+  const removeFromCart = (item: CartItem) => {
     setCart((prevCart) =>
       prevCart
-        .map((item) =>
-          item.id === id ? { ...item, quantity: item.quantity - 1 } : item
+        .map((cartItem) =>
+          cartItem.id === item.id &&
+          cartItem.size === item.size &&
+          areExtrasEqual(cartItem.extras, item.extras)
+            ? { ...cartItem, quantity: cartItem.quantity - 1 }
+            : cartItem
         )
-        .filter((item) => item.quantity > 0)
+        .filter((cartItem) => cartItem.quantity > 0)
     );
   };
 
@@ -539,7 +567,7 @@ function App() {
           />
         )
       ) : (
-        <Login onLogin={handleLogin} translations={t} />
+        <Login onLogin={handleLogin} onToggleLanguage={toggleLanguage} language={language} translations={t} />
       )}
     </div>
   );
