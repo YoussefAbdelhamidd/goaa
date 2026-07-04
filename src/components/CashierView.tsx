@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import logo from '../assets/Main logo.png';
 
 interface MenuItem {
@@ -11,14 +11,13 @@ interface MenuItem {
 
 interface CartItem extends MenuItem {
   quantity: number;
-  size?: string;
   extras?: string[];
 }
 
 interface CashierViewProps {
   menuItems: MenuItem[];
   cart: CartItem[];
-  onAddToCart: (item: MenuItem, quantity?: number, size?: string, extras?: string[]) => void;
+  onAddToCart: (item: MenuItem, quantity?: number, extras?: string[]) => void;
   onRemoveFromCart: (item: CartItem) => void;
   onCheckout: () => void;
   onToggleOrders: () => void;
@@ -35,7 +34,6 @@ interface CashierViewProps {
     emptyCart: string;
     orders: string;
     quantity: string;
-    size: string;
     extras: string;
     cancel: string;
     categories: {
@@ -44,6 +42,18 @@ interface CashierViewProps {
     editingOrder: string;
   };
 }
+
+const EXTRA_OPTIONS = [
+  { name: 'Milk', price: 20 },
+  { name: 'Sauce', price: 20 },
+  { name: 'Ice Cream', price: 15 },
+];
+
+const extrasTotal = (extras?: string[]) =>
+  (extras || []).reduce((sum, extraName) => {
+    const extra = EXTRA_OPTIONS.find((option) => option.name === extraName);
+    return sum + (extra ? extra.price : 0);
+  }, 0);
 
 const CashierView: React.FC<CashierViewProps> = ({
   menuItems,
@@ -57,27 +67,77 @@ const CashierView: React.FC<CashierViewProps> = ({
   isEditingOrder,
   translations,
 }) => {
+  // Group menu items by category
+  const groupedItems = menuItems.reduce((acc, item) => {
+    if (!acc[item.category]) {
+      acc[item.category] = [];
+    }
+    acc[item.category].push(item);
+    return acc;
+  }, {} as Record<string, MenuItem[]>);
+
+  const categories = Object.keys(groupedItems);
+
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState('Medium');
   const [selectedExtras, setSelectedExtras] = useState<string[]>([]);
+  const [activeCategory, setActiveCategory] = useState(categories[0] || '');
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-  const sizeOptions = ['Small', 'Medium', 'Large'];
-  const extraOptions = ['Extra Cheese', 'Extra Sauce', 'No Sugar'];
+  // Refs for scrolling
+  const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const categoryBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const categoryButtonsRowRef = useRef<HTMLDivElement | null>(null);
+  const menuGridRef = useRef<HTMLDivElement | null>(null);
+
+  // Highlight the category tab for whichever section is scrolled near the top of the menu
+  useEffect(() => {
+    const container = menuGridRef.current;
+    if (!container) return;
+
+    const updateActiveCategory = () => {
+      const containerTop = container.getBoundingClientRect().top;
+      let current = categories[0];
+      for (const category of categories) {
+        const section = categoryRefs.current[category];
+        if (!section) continue;
+        const sectionTop = section.getBoundingClientRect().top - containerTop;
+        if (sectionTop <= 80) {
+          current = category;
+        } else {
+          break;
+        }
+      }
+      setActiveCategory((prev) => (prev === current ? prev : current));
+    };
+
+    updateActiveCategory();
+    container.addEventListener('scroll', updateActiveCategory, { passive: true });
+    return () => container.removeEventListener('scroll', updateActiveCategory);
+  }, [menuItems]);
+
+  // Keep the active tab scrolled into view within the horizontal tab bar
+  useEffect(() => {
+    const row = categoryButtonsRowRef.current;
+    const btn = categoryBtnRefs.current[activeCategory];
+    if (!row || !btn) return;
+
+    const rowRect = row.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    const offset = btnRect.left - rowRect.left - (row.clientWidth - btn.clientWidth) / 2;
+    row.scrollTo({ left: row.scrollLeft + offset, behavior: 'smooth' });
+  }, [activeCategory]);
 
   const openItemModal = (item: MenuItem) => {
     setSelectedItem(item);
     setSelectedQuantity(1);
-    setSelectedSize('Medium');
     setSelectedExtras([]);
   };
 
   const closeItemModal = () => {
     setSelectedItem(null);
     setSelectedQuantity(1);
-    setSelectedSize('Medium');
     setSelectedExtras([]);
   };
 
@@ -89,37 +149,22 @@ const CashierView: React.FC<CashierViewProps> = ({
 
   const confirmAdd = () => {
     if (!selectedItem) return;
-    onAddToCart(selectedItem, selectedQuantity, selectedSize, selectedExtras);
+    const unitPrice = selectedItem.price + extrasTotal(selectedExtras);
+    onAddToCart({ ...selectedItem, price: unitPrice }, selectedQuantity, selectedExtras);
     closeItemModal();
   };
 
-  // Group menu items by category
-  const groupedItems = menuItems.reduce((acc, item) => {
-    if (!acc[item.category]) {
-      acc[item.category] = [];
-    }
-    acc[item.category].push(item);
-    return acc;
-  }, {} as Record<string, MenuItem[]>);
-
-  // Refs for scrolling
-  const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
   const scrollToTop = () => {
-    const menuGrid = document.querySelector('.menu-grid');
-    if (menuGrid) {
-      menuGrid.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    menuGridRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const scrollToCategory = (category: string) => {
+    setActiveCategory(category);
     const element = categoryRefs.current[category];
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
-
-  const categories = Object.keys(groupedItems);
 
   return (
     <div className="cashier-view">
@@ -151,23 +196,30 @@ const CashierView: React.FC<CashierViewProps> = ({
           <div className="cart-items">
             {cart.map((item) => (
               <div
-                key={`${item.id}-${item.size || 'default'}-${item.extras?.join('_') || ''}`}
+                key={`${item.id}-${item.extras?.join('_') || ''}`}
                 className="cart-item"
               >
                 <img src={item.image} alt={item.name} className="cart-item-image" />
                 <div className="cart-item-details">
                   <h3>{item.name}</h3>
-                  {item.size && <p>Size: {item.size}</p>}
                   {item.extras && item.extras.length > 0 && (
-                    <p>Extras: {item.extras.join(', ')}</p>
+                    <p>
+                      Extras:{' '}
+                      {item.extras
+                        .map((extraName) => {
+                          const extra = EXTRA_OPTIONS.find((option) => option.name === extraName);
+                          return extra ? `${extra.name} (+EGP${extra.price})` : extraName;
+                        })
+                        .join(', ')}
+                    </p>
                   )}
-                  <p>${item.price.toFixed(2)} each</p>
+                  <p>EGP{item.price.toFixed(2)} each</p>
                   <div className="cart-item-quantity">
                     <span>Qty: {item.quantity}</span>
                     <div className="quantity-controls">
                       <button
                         className="quantity-btn"
-                        onClick={() => onAddToCart(item, 1, item.size, item.extras)}
+                        onClick={() => onAddToCart(item, 1, item.extras)}
                         title="Increase quantity"
                       >
                         +
@@ -182,7 +234,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                     </div>
                   </div>
                   <p className="item-subtotal">
-                    Subtotal: ${(item.price * item.quantity).toFixed(2)}
+                    Subtotal: EGP{(item.price * item.quantity).toFixed(2)}
                   </p>
                 </div>
               </div>
@@ -191,71 +243,82 @@ const CashierView: React.FC<CashierViewProps> = ({
         )}
         {cart.length > 0 && (
           <div className="cart-total">
-            <h3>{translations.total}: ${total.toFixed(2)}</h3>
+            <h3>{translations.total}: EGP{total.toFixed(2)}</h3>
             <button className="checkout-btn" onClick={onCheckout}>{translations.checkout}</button>
           </div>
         )}
         {selectedItem && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <h3>{selectedItem.name}</h3>
-              <img src={selectedItem.image} alt={selectedItem.name} className="menu-item-image" />
-              <p className="price">${selectedItem.price.toFixed(2)}</p>
-              <div className="item-options">
-                <div className="option-group">
-                  <label>{translations.quantity}</label>
-                  <div className="quantity-controls">
-                    <button
-                      className="quantity-btn"
-                      type="button"
-                      onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
-                    >
-                      −
-                    </button>
-                    <span>{selectedQuantity}</span>
-                    <button
-                      className="quantity-btn"
-                      type="button"
-                      onClick={() => setSelectedQuantity(selectedQuantity + 1)}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-                <div className="option-group">
-                  <label>{translations.size}</label>
-                  <select
-                    value={selectedSize}
-                    onChange={(e) => setSelectedSize(e.target.value)}
-                  >
-                    {sizeOptions.map((size) => (
-                      <option key={size} value={size}>{size}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="option-group">
-                  <label>{translations.extras}</label>
-                  <div className="extras-list">
-                    {extraOptions.map((extra) => (
-                      <label key={extra} className="extra-option">
-                        <input
-                          type="checkbox"
-                          checked={selectedExtras.includes(extra)}
-                          onChange={() => toggleExtra(extra)}
-                        />
-                        {extra}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+          <div className="modal-overlay" onClick={closeItemModal}>
+            <div className="modal-content item-modal" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="item-modal-close"
+                type="button"
+                onClick={closeItemModal}
+                aria-label="Close"
+              >
+                ×
+              </button>
+              <div className="item-modal-hero">
+                <img src={selectedItem.image} alt={selectedItem.name} className="item-modal-image" />
               </div>
-              <div className="modal-buttons">
-                <button className="cancel-btn" type="button" onClick={closeItemModal}>
-                  {translations.cancel}
-                </button>
-                <button className="confirm-btn" type="button" onClick={confirmAdd}>
-                  {translations.addToCart}
-                </button>
+              <div className="item-modal-body">
+                <div className="item-modal-heading">
+                  <h3>{selectedItem.name}</h3>
+                  <span className="item-modal-price">EGP{selectedItem.price.toFixed(2)}</span>
+                </div>
+                <div className="item-options">
+                  <div className="option-group">
+                    <label>{translations.quantity}</label>
+                    <div className="quantity-controls">
+                      <button
+                        className="quantity-btn"
+                        type="button"
+                        onClick={() => setSelectedQuantity(Math.max(1, selectedQuantity - 1))}
+                      >
+                        −
+                      </button>
+                      <span>{selectedQuantity}</span>
+                      <button
+                        className="quantity-btn"
+                        type="button"
+                        onClick={() => setSelectedQuantity(selectedQuantity + 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                  <div className="option-group">
+                    <label>{translations.extras}</label>
+                    <div className="pill-group">
+                      {EXTRA_OPTIONS.map((extra) => (
+                        <button
+                          key={extra.name}
+                          type="button"
+                          className={`pill-option ${selectedExtras.includes(extra.name) ? 'selected' : ''}`}
+                          onClick={() => toggleExtra(extra.name)}
+                        >
+                          {extra.name} <span className="pill-option-price">+EGP{extra.price}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="item-modal-footer">
+                  <div className="item-modal-total">
+                    <span>{translations.total}</span>
+                    <strong>
+                      EGP{((selectedItem.price + extrasTotal(selectedExtras)) * selectedQuantity).toFixed(2)}
+                    </strong>
+                  </div>
+                  <div className="modal-buttons">
+                    <button className="cancel-btn" type="button" onClick={closeItemModal}>
+                      {translations.cancel}
+                    </button>
+                    <button className="confirm-btn" type="button" onClick={confirmAdd}>
+                      {translations.addToCart}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -263,18 +326,19 @@ const CashierView: React.FC<CashierViewProps> = ({
       </div>
       <div className="menu-section">
         <h2>{translations.menu}</h2>
-        <div className="category-buttons">
+        <div className="category-buttons" ref={categoryButtonsRowRef}>
           {categories.map((category) => (
             <button
               key={category}
+              ref={(el) => { categoryBtnRefs.current[category] = el; }}
               onClick={() => scrollToCategory(category)}
-              className="category-btn"
+              className={`category-btn ${activeCategory === category ? 'active' : ''}`}
             >
               {translations.categories[category]}
             </button>
           ))}
         </div>
-        <div className="menu-grid">
+        <div className="menu-grid" ref={menuGridRef}>
           {categories.map((category) => (
             <div
               key={category}
@@ -287,7 +351,7 @@ const CashierView: React.FC<CashierViewProps> = ({
                   <div key={item.id} className="menu-item" onClick={() => openItemModal(item)}>
                     <img src={item.image} alt={item.name} className="menu-item-image" />
                     <h3>{item.name}</h3>
-                    <p className="price">${item.price.toFixed(2)}</p>
+                    <p className="price">EGP{item.price.toFixed(2)}</p>
                     <button className="add-btn" type="button">{translations.addToCart}</button>
                   </div>
                 ))}

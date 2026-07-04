@@ -1,8 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect} from 'react';
 import Login from './components/Login';
 import CashierView from './components/CashierView';
 import OrdersView from './components/OrdersView';
+import AdminDashboard from './components/AdminDashboard';
 import './App.css';
+
+const ADMIN_PASSWORD = 'admin1234';
 
 interface MenuItem {
   id: number;
@@ -14,7 +17,6 @@ interface MenuItem {
 
 interface CartItem extends MenuItem {
   quantity: number;
-  size?: string;
   extras?: string[];
 }
 
@@ -25,6 +27,16 @@ interface Order {
   timestamp: number;
   status: 'pending' | 'paid';
   table?: number | 'to-go';
+  cashierId?: string;
+}
+
+interface SaleRecord {
+  orderId: string;
+  cashierId: string;
+  table?: number | 'to-go';
+  items: CartItem[];
+  total: number;
+  paidAt: number;
 }
 
 const menuItems: MenuItem[] = [
@@ -87,6 +99,42 @@ const menuItems: MenuItem[] = [
   { id: 50, name: 'Watermelon Energy', price: 100, image: 'https://loremflickr.com/200/200/watermelon,energy,drink?lock=150', category: 'Energy' },
   { id: 51, name: 'Peach Energy', price: 100, image: 'https://loremflickr.com/200/200/peach,energy,drink?lock=151', category: 'Energy' },
   { id: 52, name: 'Passion Energy', price: 100, image: 'https://loremflickr.com/200/200/passion,fruit,energy?lock=152', category: 'Energy' },
+  // Fresh
+  { id: 53, name: 'Fresh Peach', price: 70, image: 'https://loremflickr.com/200/200/peach,fresh,drink?lock=153', category: 'Fresh' },
+  { id: 54, name: 'Fresh Yogurt', price: 80, image: 'https://loremflickr.com/200/200/yogurt,drink?lock=154', category: 'Fresh' },
+  // Milk Shake
+  { id: 55, name: 'Nutella Milkshake', price: 100, image: 'https://loremflickr.com/200/200/nutella,milkshake?lock=155', category: 'MilkShake' },
+  { id: 56, name: 'Caramel Milkshake', price: 100, image: 'https://loremflickr.com/200/200/caramel,milkshake?lock=156', category: 'MilkShake' },
+  { id: 57, name: 'Lotus Milkshake', price: 100, image: 'https://loremflickr.com/200/200/lotus,milkshake?lock=157', category: 'MilkShake' },
+  { id: 58, name: 'Vanilla Milkshake', price: 100, image: 'https://loremflickr.com/200/200/vanilla,milkshake?lock=158', category: 'MilkShake' },
+  { id: 59, name: 'Oreo Milkshake', price: 100, image: 'https://loremflickr.com/200/200/oreo,milkshake?lock=159', category: 'MilkShake' },
+  { id: 60, name: 'Watermelon Milkshake', price: 90, image: 'https://loremflickr.com/200/200/watermelon,milkshake?lock=160', category: 'MilkShake' },
+  { id: 61, name: 'Strawberry Milkshake', price: 90, image: 'https://loremflickr.com/200/200/strawberry,milkshake?lock=161', category: 'MilkShake' },
+  { id: 62, name: 'Mango Milkshake', price: 90, image: 'https://loremflickr.com/200/200/mango,milkshake?lock=162', category: 'MilkShake' },
+  { id: 63, name: 'Blueberry Milkshake', price: 90, image: 'https://loremflickr.com/200/200/blueberry,milkshake?lock=163', category: 'MilkShake' },
+  { id: 64, name: 'Peach Milkshake', price: 90, image: 'https://loremflickr.com/200/200/peach,milkshake?lock=164', category: 'MilkShake' },
+  // Ice Tea
+  { id: 65, name: 'Lemon Ice Tea', price: 70, image: 'https://loremflickr.com/200/200/lemon,iced,tea?lock=165', category: 'IceTea' },
+  { id: 66, name: 'Peach Ice Tea', price: 85, image: 'https://loremflickr.com/200/200/peach,iced,tea?lock=166', category: 'IceTea' },
+  { id: 67, name: 'Passion Fruit Ice Tea', price: 85, image: 'https://loremflickr.com/200/200/passion,fruit,iced,tea?lock=167', category: 'IceTea' },
+  { id: 68, name: 'Mango Ice Tea', price: 85, image: 'https://loremflickr.com/200/200/mango,iced,tea?lock=168', category: 'IceTea' },
+  { id: 69, name: 'Cherry Ice Tea', price: 85, image: 'https://loremflickr.com/200/200/cherry,iced,tea?lock=169', category: 'IceTea' },
+  // Smoothies
+  { id: 70, name: 'Mango Madness Smoothie', price: 90, image: 'https://loremflickr.com/200/200/mango,smoothie?lock=170', category: 'Smoothies' },
+  { id: 71, name: 'Strawberry Blast Smoothie', price: 90, image: 'https://loremflickr.com/200/200/strawberry,smoothie?lock=171', category: 'Smoothies' },
+  { id: 72, name: 'Strawberry Banana Smoothie', price: 90, image: 'https://loremflickr.com/200/200/strawberry,banana,smoothie?lock=172', category: 'Smoothies' },
+  { id: 73, name: 'Tropical Mix Smoothie', price: 90, image: 'https://loremflickr.com/200/200/tropical,smoothie?lock=173', category: 'Smoothies' },
+  { id: 74, name: 'Peach Smoothie', price: 90, image: 'https://loremflickr.com/200/200/peach,smoothie?lock=174', category: 'Smoothies' },
+  { id: 75, name: 'Signature Sunset Smoothie', price: 90, image: 'https://loremflickr.com/200/200/sunset,smoothie,fruit?lock=175', category: 'Smoothies' },
+  // Soft Drinks
+  { id: 76, name: 'Soda Can', price: 45, image: 'https://loremflickr.com/200/200/soda,can?lock=176', category: 'SoftDrinks' },
+  { id: 77, name: 'Red Bull', price: 100, image: 'https://loremflickr.com/200/200/red,bull,energy,drink?lock=177', category: 'SoftDrinks' },
+  { id: 78, name: 'Water', price: 15, image: 'https://loremflickr.com/200/200/water,bottle?lock=178', category: 'SoftDrinks' },
+  // Hookah
+  { id: 79, name: 'Hookah Pyrex', price: 150, image: 'https://loremflickr.com/200/200/hookah,shisha,glass?lock=179', category: 'Hookah' },
+  { id: 80, name: 'Hookah Fakher', price: 80, image: 'https://loremflickr.com/200/200/hookah,shisha?lock=180', category: 'Hookah' },
+  { id: 81, name: 'Moasel', price: 20, image: 'https://loremflickr.com/200/200/tobacco,shisha?lock=181', category: 'Hookah' },
+  { id: 82, name: 'Moasel Arabi', price: 50, image: 'https://loremflickr.com/200/200/shisha,tobacco,arabic?lock=182', category: 'Hookah' },
 ];
 
 const translations = {
@@ -94,7 +142,7 @@ const translations = {
     login: 'Login',
     number: 'Number',
     password: 'Password',
-    initialDrawer: 'Initial Drawer Amount ($)',
+    initialDrawer: 'Initial Drawer Amount (EGP)',
     cart: 'Cart',
     menu: 'Menu',
     total: 'Total',
@@ -121,7 +169,6 @@ const translations = {
     paymentNote: 'All payments are processed as cash transactions.',
     cancel: 'Cancel',
     quantity: 'Quantity',
-    size: 'Size',
     extras: 'Extras',
     cafeReceipt: 'Cafe Receipt',
     orderNumber: 'Order #',
@@ -129,7 +176,7 @@ const translations = {
     thankYou: 'Thank you for your visit!',
     occupied: 'Occupied',
     logout: 'Logout',
-    finalDrawer: 'Final Drawer Amount ($)',
+    finalDrawer: 'Final Drawer Amount (EGP)',
     shiftSummary: 'Shift Summary',
     shiftStart: 'Shift Start',
     shiftEnd: 'Shift End',
@@ -146,6 +193,12 @@ const translations = {
       FreshJuice: 'Fresh Juice',
       Mojito: 'Mojito',
       Energy: 'Energy',
+      Fresh: 'Fresh',
+      MilkShake: 'Milk Shake',
+      IceTea: 'Ice Tea',
+      Smoothies: 'Smoothies',
+      SoftDrinks: 'Soft Drinks',
+      Hookah: 'Hookah',
     },
     menuItems: {
       1: 'Tea',
@@ -200,13 +253,43 @@ const translations = {
       50: 'Watermelon Energy',
       51: 'Peach Energy',
       52: 'Passion Energy',
+      53: 'Fresh Peach',
+      54: 'Fresh Yogurt',
+      55: 'Nutella Milkshake',
+      56: 'Caramel Milkshake',
+      57: 'Lotus Milkshake',
+      58: 'Vanilla Milkshake',
+      59: 'Oreo Milkshake',
+      60: 'Watermelon Milkshake',
+      61: 'Strawberry Milkshake',
+      62: 'Mango Milkshake',
+      63: 'Blueberry Milkshake',
+      64: 'Peach Milkshake',
+      65: 'Lemon Ice Tea',
+      66: 'Peach Ice Tea',
+      67: 'Passion Fruit Ice Tea',
+      68: 'Mango Ice Tea',
+      69: 'Cherry Ice Tea',
+      70: 'Mango Madness Smoothie',
+      71: 'Strawberry Blast Smoothie',
+      72: 'Strawberry Banana Smoothie',
+      73: 'Tropical Mix Smoothie',
+      74: 'Peach Smoothie',
+      75: 'Signature Sunset Smoothie',
+      76: 'Soda Can',
+      77: 'Red Bull',
+      78: 'Water',
+      79: 'Hookah Pyrex',
+      80: 'Hookah Fakher',
+      81: 'Moasel',
+      82: 'Moasel Arabi',
     },
   },
   ar: {
     login: 'تسجيل الدخول',
     number: 'الرقم',
     password: 'كلمة المرور',
-    initialDrawer: 'مبلغ الدرج الأولي ($)',
+    initialDrawer: 'مبلغ الدرج الأولي (EGP)',
     cart: 'السلة',
     menu: 'القائمة',
     total: 'المجموع',
@@ -233,7 +316,6 @@ const translations = {
     paymentNote: 'جميع المدفوعات تتم نقدًا.',
     cancel: 'إلغاء',
     quantity: 'الكمية',
-    size: 'الحجم',
     extras: 'إضافات',
     cafeReceipt: 'إيصال المقهى',
     orderNumber: 'رقم الطلب',
@@ -241,7 +323,7 @@ const translations = {
     thankYou: 'شكرًا لزيارتكم!',
     occupied: 'مشغول',
     logout: 'تسجيل الخروج',
-    finalDrawer: 'مبلغ الدرج النهائي ($)',
+    finalDrawer: 'مبلغ الدرج النهائي (EGP)',
     shiftSummary: 'ملخص الوردية',
     shiftStart: 'بداية الوردية',
     shiftEnd: 'نهاية الوردية',
@@ -258,6 +340,12 @@ const translations = {
       FreshJuice: 'عصائر طازجة',
       Mojito: 'موهيتو',
       Energy: 'مشروبات طاقة',
+      Fresh: 'فريش',
+      MilkShake: 'ميلك شيك',
+      IceTea: 'آيس تي',
+      Smoothies: 'سموذي',
+      SoftDrinks: 'مشروبات غازية',
+      Hookah: 'شيشة',
     },
     menuItems: {
       1: 'شاي',
@@ -312,6 +400,36 @@ const translations = {
       50: 'إنرجي بطيخ',
       51: 'إنرجي خوخ',
       52: 'إنرجي باشون',
+      53: 'فريش خوخ',
+      54: 'فريش زبادي',
+      55: 'ميلك شيك نوتيلا',
+      56: 'ميلك شيك كراميل',
+      57: 'ميلك شيك لوتس',
+      58: 'ميلك شيك فانيليا',
+      59: 'ميلك شيك أوريو',
+      60: 'ميلك شيك بطيخ',
+      61: 'ميلك شيك فراولة',
+      62: 'ميلك شيك مانجا',
+      63: 'ميلك شيك بلوبيري',
+      64: 'ميلك شيك خوخ',
+      65: 'آيس تي ليمون',
+      66: 'آيس تي خوخ',
+      67: 'آيس تي فاكهة العشق',
+      68: 'آيس تي مانجا',
+      69: 'آيس تي كرز',
+      70: 'سموذي مانجا مادنس',
+      71: 'سموذي فراولة بلاست',
+      72: 'سموذي فراولة وموز',
+      73: 'سموذي تروبيكال مكس',
+      74: 'سموذي خوخ',
+      75: 'سموذي سيجنتشر صانسيت',
+      76: 'مشروب غازي',
+      77: 'ريد بول',
+      78: 'مياه',
+      79: 'شيشة بايركس',
+      80: 'شيشة فاخر',
+      81: 'معسل',
+      82: 'معسل عربي',
     },
   },
 };
@@ -330,29 +448,68 @@ function App() {
   const [cashierId, setCashierId] = useState<string>('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [finalDrawerAmount, setFinalDrawerAmount] = useState('');
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [adminError, setAdminError] = useState(false);
 
   const t = translations[language];
 
-  // Load orders from localStorage on mount
+  // Resume an active cashier session (and its orders) if one is already open on this device
   useEffect(() => {
-    const savedOrders = localStorage.getItem('cafeOrders');
-    if (savedOrders) {
-      setOrders(JSON.parse(savedOrders));
+    const savedOrdersRaw = localStorage.getItem('cafeOrders');
+    const savedOrders: Order[] = savedOrdersRaw ? JSON.parse(savedOrdersRaw) : [];
+    if (savedOrdersRaw) {
+      setOrders(savedOrders);
+    }
+
+    const savedSession = localStorage.getItem('cafeActiveSession');
+    if (savedSession) {
+      const session = JSON.parse(savedSession);
+      const paidTotal = savedOrders
+        .filter((order) => order.status === 'paid')
+        .reduce((sum, order) => sum + order.total, 0);
+      setIsLoggedIn(true);
+      setCashierId(session.cashierId);
+      setDrawerAmount(session.initialDrawerAmount + paidTotal);
+      setShiftStartTime(session.shiftStartTime);
     }
   }, []);
 
   const handleLogin = (number: string, password: string, initialDrawer: number) => {
     // Simple validation: just check if both are provided
     if (number && password) {
+      const shiftStart = Date.now();
       setIsLoggedIn(true);
       setDrawerAmount(initialDrawer);
-      setShiftStartTime(Date.now());
+      setShiftStartTime(shiftStart);
       setCashierId(number);
+      localStorage.setItem('cafeActiveSession', JSON.stringify({
+        cashierId: number,
+        initialDrawerAmount: initialDrawer,
+        shiftStartTime: shiftStart,
+      }));
     }
   };
 
   const toggleLanguage = () => {
     setLanguage(language === 'en' ? 'ar' : 'en');
+  };
+
+  const openAdminLogin = () => {
+    setAdminPasswordInput('');
+    setAdminError(false);
+    setShowAdminLogin(true);
+  };
+
+  const submitAdminLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPasswordInput === ADMIN_PASSWORD) {
+      setShowAdminLogin(false);
+      setShowAdminDashboard(true);
+    } else {
+      setAdminError(true);
+    }
   };
 
   const toggleOrdersView = () => {
@@ -392,6 +549,10 @@ function App() {
     const existingShifts = JSON.parse(localStorage.getItem('cafeShifts') || '[]');
     existingShifts.push(shiftData);
     localStorage.setItem('cafeShifts', JSON.stringify(existingShifts));
+
+    // End the session so the device is free for the next cashier to log in
+    localStorage.removeItem('cafeActiveSession');
+    localStorage.removeItem('cafeOrders');
 
     // Reset state
     setIsLoggedIn(false);
@@ -451,6 +612,7 @@ function App() {
         timestamp: Date.now(),
         status: 'pending',
         table: selectedTable,
+        cashierId,
       };
 
       const updatedOrders = [...orders, newOrder];
@@ -461,6 +623,20 @@ function App() {
     setCart([]); // Clear cart after checkout
     setShowCheckoutModal(false);
     setSelectedTable(null);
+  };
+
+  const recordSale = (order: Order) => {
+    const saleRecord: SaleRecord = {
+      orderId: order.id,
+      cashierId: order.cashierId || cashierId,
+      table: order.table,
+      items: order.items,
+      total: order.total,
+      paidAt: Date.now(),
+    };
+    const salesHistory = JSON.parse(localStorage.getItem('cafeSalesHistory') || '[]');
+    salesHistory.push(saleRecord);
+    localStorage.setItem('cafeSalesHistory', JSON.stringify(salesHistory));
   };
 
   const payOrder = (orderId: string) => {
@@ -474,6 +650,7 @@ function App() {
     const order = orders.find(o => o.id === orderId);
     if (order) {
       setDrawerAmount(prev => prev + order.total);
+      recordSale(order);
       printReceipt(order);
     }
   };
@@ -511,13 +688,13 @@ function App() {
             ${order.items.map(item => `
               <div class="item">
                 <span>${item.name} x${item.quantity}</span>
-                <span>$${(item.price * item.quantity).toFixed(2)}</span>
+                <span>EGP${(item.price * item.quantity).toFixed(2)}</span>
               </div>
             `).join('')}
             <div class="total">
               <div class="item">
                 <span>${t.total}</span>
-                <span>$${order.total.toFixed(2)}</span>
+                <span>EGP${order.total.toFixed(2)}</span>
               </div>
             </div>
             <div class="footer">
@@ -542,13 +719,12 @@ function App() {
   const addToCart = (
     item: MenuItem,
     quantity: number = 1,
-    size?: string,
     extras?: string[]
   ) => {
     setCart((prevCart) => {
       const existing = prevCart.find((cartItem) =>
         cartItem.id === item.id &&
-        cartItem.size === size &&
+        cartItem.price === item.price &&
         areExtrasEqual(cartItem.extras, extras)
       );
 
@@ -560,7 +736,7 @@ function App() {
         );
       }
 
-      return [...prevCart, { ...item, quantity, size, extras }];
+      return [...prevCart, { ...item, quantity, extras }];
     });
   };
 
@@ -569,7 +745,7 @@ function App() {
       prevCart
         .map((cartItem) =>
           cartItem.id === item.id &&
-          cartItem.size === item.size &&
+          cartItem.price === item.price &&
           areExtrasEqual(cartItem.extras, item.extras)
             ? { ...cartItem, quantity: cartItem.quantity - 1 }
             : cartItem
@@ -653,15 +829,15 @@ function App() {
             </div>
             <div className="summary-row">
               <span>{t.initialAmount}:</span>
-              <span>${initialDrawer.toFixed(2)}</span>
+              <span>EGP{initialDrawer.toFixed(2)}</span>
             </div>
             <div className="summary-row">
               <span>{t.totalSales}:</span>
-              <span>${totalSales.toFixed(2)}</span>
+              <span>EGP{totalSales.toFixed(2)}</span>
             </div>
             <div className="summary-row">
               <span>{t.expectedDrawer}:</span>
-              <span>${expectedDrawer.toFixed(2)}</span>
+              <span>EGP{expectedDrawer.toFixed(2)}</span>
             </div>
             <div className="summary-divider"></div>
             <div className="final-drawer-input">
@@ -694,11 +870,45 @@ function App() {
     );
   };
 
+  const AdminLoginModal = () => (
+    <div className="modal-overlay" onClick={() => setShowAdminLogin(false)}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <h3>Admin Login</h3>
+        <form onSubmit={submitAdminLogin}>
+          <div className="login-field">
+            <label>Password:</label>
+            <input
+              type="password"
+              value={adminPasswordInput}
+              onChange={(e) => {
+                setAdminPasswordInput(e.target.value);
+                setAdminError(false);
+              }}
+              autoFocus
+            />
+          </div>
+          {adminError && <p className="admin-login-error">Incorrect password.</p>}
+          <div className="modal-buttons">
+            <button type="button" className="cancel-btn" onClick={() => setShowAdminLogin(false)}>
+              {t.cancel}
+            </button>
+            <button type="submit" className="confirm-btn">
+              Login
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+
   return (
     <div className="app" dir={language === 'ar' ? 'rtl' : 'ltr'}>
       {showCheckoutModal && <CheckoutModal />}
       {showLogoutModal && <LogoutModal />}
-      {isLoggedIn ? (
+      {showAdminLogin && <AdminLoginModal />}
+      {showAdminDashboard ? (
+        <AdminDashboard onBack={() => setShowAdminDashboard(false)} />
+      ) : isLoggedIn ? (
         showOrders ? (
           <OrdersView
             orders={orders}
@@ -725,7 +935,13 @@ function App() {
           />
         )
       ) : (
-        <Login onLogin={handleLogin} onToggleLanguage={toggleLanguage} language={language} translations={t} />
+        <Login
+          onLogin={handleLogin}
+          onToggleLanguage={toggleLanguage}
+          language={language}
+          translations={t}
+          onAdminClick={openAdminLogin}
+        />
       )}
     </div>
   );

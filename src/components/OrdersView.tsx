@@ -99,12 +99,12 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                   {order.items.map((item) => (
                     <div key={item.id} className="order-item-detail">
                       <span>{item.name} x{item.quantity}</span>
-                      <span>${(item.price * item.quantity).toFixed(2)}</span>
+                      <span>EGP{(item.price * item.quantity).toFixed(2)}</span>
                     </div>
                   ))}
                 </div>
                 <div className="order-total">
-                  <strong>{translations.total}: ${order.total.toFixed(2)}</strong>
+                  <strong>{translations.total}: EGP{order.total.toFixed(2)}</strong>
                 </div>
                 {order.status === 'pending' && (
                   <div className="order-actions">

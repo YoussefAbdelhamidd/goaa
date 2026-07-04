@@ -11,9 +11,10 @@ interface LoginProps {
     password: string;
     initialDrawer: string;
   };
+  onAdminClick: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, translations }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, translations, onAdminClick }) => {
   const [number, setNumber] = useState('');
   const [password, setPassword] = useState('');
   const [initialDrawer, setInitialDrawer] = useState('');
@@ -76,6 +77,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, tran
           </div>
           <button type="submit">{translations.login}</button>
         </form>
+        <button type="button" className="admin-link" onClick={onAdminClick}>
+          Admin
+        </button>
       </div>
     </div>
   );
