@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import bannerImage from '../assets/banner.png';
 
 interface LoginProps {
-  onLogin: (number: string, password: string, initialDrawer: number) => void;
+  onLogin: (username: string, password: string, initialDrawer: number) => boolean;
   onToggleLanguage: () => void;
   language: 'en' | 'ar';
   translations: {
@@ -15,16 +15,18 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, translations, onAdminClick }) => {
-  const [number, setNumber] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [initialDrawer, setInitialDrawer] = useState('');
+  const [error, setError] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (number && password && initialDrawer) {
+    if (username && password && initialDrawer) {
       const drawerAmount = parseFloat(initialDrawer);
       if (!isNaN(drawerAmount) && drawerAmount >= 0) {
-        onLogin(number, password, drawerAmount);
+        const success = onLogin(username, password, drawerAmount);
+        setError(!success);
       }
     }
   };
@@ -49,8 +51,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, tran
             <label>{translations.number}:</label>
             <input
               type="text"
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                setError(false);
+              }}
               required
             />
           </div>
@@ -59,7 +64,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, tran
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError(false);
+              }}
               required
             />
           </div>
@@ -75,6 +83,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, tran
               required
             />
           </div>
+          {error && <p className="login-error">Invalid username or password.</p>}
           <button type="submit">{translations.login}</button>
         </form>
         <button type="button" className="admin-link" onClick={onAdminClick}>

@@ -3,9 +3,18 @@ import Login from './components/Login';
 import CashierView from './components/CashierView';
 import OrdersView from './components/OrdersView';
 import AdminDashboard from './components/AdminDashboard';
+import bannerImage from './assets/banner.png';
 import './App.css';
 
-const ADMIN_PASSWORD = 'admin1234';
+const ADMIN_CREDENTIALS: Record<string, string> = {
+  Omar: '01277554354',
+};
+
+const CASHIER_CREDENTIALS: Record<string, string> = {
+  Gooba: '01008191994',
+  Elsos: '01226210927',
+  Mohanad: '01207266413',
+};
 
 interface MenuItem {
   id: number;
@@ -140,7 +149,7 @@ const menuItems: MenuItem[] = [
 const translations = {
   en: {
     login: 'Login',
-    number: 'Number',
+    number: 'Username',
     password: 'Password',
     initialDrawer: 'Initial Drawer Amount (EGP)',
     cart: 'Cart',
@@ -287,7 +296,7 @@ const translations = {
   },
   ar: {
     login: 'تسجيل الدخول',
-    number: 'الرقم',
+    number: 'اسم المستخدم',
     password: 'كلمة المرور',
     initialDrawer: 'مبلغ الدرج الأولي (EGP)',
     cart: 'السلة',
@@ -450,6 +459,7 @@ function App() {
   const [finalDrawerAmount, setFinalDrawerAmount] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminError, setAdminError] = useState(false);
 
@@ -476,20 +486,21 @@ function App() {
     }
   }, []);
 
-  const handleLogin = (number: string, password: string, initialDrawer: number) => {
-    // Simple validation: just check if both are provided
-    if (number && password) {
-      const shiftStart = Date.now();
-      setIsLoggedIn(true);
-      setDrawerAmount(initialDrawer);
-      setShiftStartTime(shiftStart);
-      setCashierId(number);
-      localStorage.setItem('cafeActiveSession', JSON.stringify({
-        cashierId: number,
-        initialDrawerAmount: initialDrawer,
-        shiftStartTime: shiftStart,
-      }));
+  const handleLogin = (username: string, password: string, initialDrawer: number) => {
+    if (CASHIER_CREDENTIALS[username] !== password) {
+      return false;
     }
+    const shiftStart = Date.now();
+    setIsLoggedIn(true);
+    setDrawerAmount(initialDrawer);
+    setShiftStartTime(shiftStart);
+    setCashierId(username);
+    localStorage.setItem('cafeActiveSession', JSON.stringify({
+      cashierId: username,
+      initialDrawerAmount: initialDrawer,
+      shiftStartTime: shiftStart,
+    }));
+    return true;
   };
 
   const toggleLanguage = () => {
@@ -497,6 +508,7 @@ function App() {
   };
 
   const openAdminLogin = () => {
+    setAdminUsernameInput('');
     setAdminPasswordInput('');
     setAdminError(false);
     setShowAdminLogin(true);
@@ -504,7 +516,7 @@ function App() {
 
   const submitAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (adminPasswordInput === ADMIN_PASSWORD) {
+    if (ADMIN_CREDENTIALS[adminUsernameInput] === adminPasswordInput) {
       setShowAdminLogin(false);
       setShowAdminDashboard(true);
     } else {
@@ -672,34 +684,41 @@ function App() {
           <head>
             <title>Receipt</title>
             <style>
-              body { font-family: Arial, sans-serif; margin: 20px; }
+              body { font-family: Arial, sans-serif; margin: 0; }
+              .banner { width: 100%; display: block; }
+              .receipt-body { padding: 20px; }
               .header { text-align: center; margin-bottom: 20px; }
               .item { display: flex; justify-content: space-between; margin: 5px 0; }
               .total { border-top: 1px solid #000; padding-top: 10px; font-weight: bold; }
               .footer { text-align: center; margin-top: 20px; font-size: 12px; }
+              .footer .closing { margin-top: 10px; font-weight: bold; font-size: 14px; }
             </style>
           </head>
           <body>
-            <div class="header">
-              <h2>${t.cafeReceipt}</h2>
-              <p>${t.orderNumber}${order.id}</p>
-              <p>${new Date(order.timestamp).toLocaleString()}</p>
-            </div>
-            ${order.items.map(item => `
-              <div class="item">
-                <span>${item.name} x${item.quantity}</span>
-                <span>EGP${(item.price * item.quantity).toFixed(2)}</span>
+            <img src="${bannerImage}" alt="Gooba banner" class="banner" />
+            <div class="receipt-body">
+              <div class="header">
+                <h2>${t.cafeReceipt}</h2>
+                <p>${t.orderNumber}${order.id}</p>
+                <p>${new Date(order.timestamp).toLocaleString()}</p>
               </div>
-            `).join('')}
-            <div class="total">
-              <div class="item">
-                <span>${t.total}</span>
-                <span>EGP${order.total.toFixed(2)}</span>
+              ${order.items.map(item => `
+                <div class="item">
+                  <span>${item.name} x${item.quantity}</span>
+                  <span>EGP${(item.price * item.quantity).toFixed(2)}</span>
+                </div>
+              `).join('')}
+              <div class="total">
+                <div class="item">
+                  <span>${t.total}</span>
+                  <span>EGP${order.total.toFixed(2)}</span>
+                </div>
               </div>
-            </div>
-            <div class="footer">
-              <p>${t.paymentCash}</p>
-              <p>${t.thankYou}</p>
+              <div class="footer">
+                <p>${t.paymentCash}</p>
+                <p>${t.thankYou}</p>
+                <p class="closing">Your Next Coffee Is Waiting, See You Soon!</p>
+              </div>
             </div>
           </body>
         </html>
@@ -876,6 +895,18 @@ function App() {
         <h3>Admin Login</h3>
         <form onSubmit={submitAdminLogin}>
           <div className="login-field">
+            <label>Username:</label>
+            <input
+              type="text"
+              value={adminUsernameInput}
+              onChange={(e) => {
+                setAdminUsernameInput(e.target.value);
+                setAdminError(false);
+              }}
+              autoFocus
+            />
+          </div>
+          <div className="login-field">
             <label>Password:</label>
             <input
               type="password"
@@ -884,10 +915,9 @@ function App() {
                 setAdminPasswordInput(e.target.value);
                 setAdminError(false);
               }}
-              autoFocus
             />
           </div>
-          {adminError && <p className="admin-login-error">Incorrect password.</p>}
+          {adminError && <p className="admin-login-error">Incorrect username or password.</p>}
           <div className="modal-buttons">
             <button type="button" className="cancel-btn" onClick={() => setShowAdminLogin(false)}>
               {t.cancel}

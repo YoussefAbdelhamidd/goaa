@@ -215,6 +215,14 @@
   margin: -6px 0 0;
 }
 
+.login-error {
+  color: #dc3545;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: -6px 0 0;
+  text-align: center;
+}
+
 .login-lang-toggle {
   position: absolute;
   top: 20px;
