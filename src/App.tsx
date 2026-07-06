@@ -3,7 +3,7 @@ import Login from './components/Login';
 import CashierView from './components/CashierView';
 import OrdersView from './components/OrdersView';
 import AdminDashboard from './components/AdminDashboard';
-import bannerImage from './assets/banner.png';
+import goobaTextLogo from './assets/GOOBA-text.svg';
 import './App.css';
 
 const ADMIN_CREDENTIALS: Record<string, string> = {
@@ -29,6 +29,8 @@ interface CartItem extends MenuItem {
   extras?: string[];
 }
 
+type PaymentMethod = 'cash' | 'card' | 'instapay';
+
 interface Order {
   id: string;
   items: CartItem[];
@@ -37,6 +39,7 @@ interface Order {
   status: 'pending' | 'paid';
   table?: number | 'to-go';
   cashierId?: string;
+  paymentMethod?: PaymentMethod;
 }
 
 interface SaleRecord {
@@ -46,7 +49,11 @@ interface SaleRecord {
   items: CartItem[];
   total: number;
   paidAt: number;
+  paymentMethod: PaymentMethod;
 }
+
+// Orders paid before payment methods were tracked are treated as cash for drawer math
+const isCashPayment = (order: Order) => !order.paymentMethod || order.paymentMethod === 'cash';
 
 const menuItems: MenuItem[] = [
   // Hot Drinks
@@ -163,10 +170,12 @@ const translations = {
     orderId: 'Order ID',
     date: 'Date',
     status: 'Status',
+    statusAll: 'All',
     pending: 'Pending',
     paid: 'Paid',
     pay: 'Pay',
     noOrders: 'No orders found',
+    noOrdersForFilter: 'No orders in this status',
     table: 'Table',
     toGo: 'To Go',
     selectTable: 'Select Table',
@@ -174,14 +183,16 @@ const translations = {
     addItems: 'Add Items',
     editingOrder: 'Editing Current Order',
     orderManagement: 'Order Management',
-    orderInstructions: 'Click on pending orders to mark as paid and print receipt.',
-    paymentNote: 'All payments are processed as cash transactions.',
+    orderInstructions: 'Click on pending orders to choose a payment method, mark as paid, and print the receipt.',
+    paymentNote: 'Only cash payments affect the drawer amount. Card and InstaPay sales are tracked separately.',
     cancel: 'Cancel',
     quantity: 'Quantity',
     extras: 'Extras',
     cafeReceipt: 'Cafe Receipt',
     orderNumber: 'Order #',
     paymentCash: 'Payment: Cash',
+    paymentCard: 'Payment: Card',
+    paymentInstapay: 'Payment: InstaPay',
     thankYou: 'Thank you for your visit!',
     occupied: 'Occupied',
     logout: 'Logout',
@@ -192,8 +203,16 @@ const translations = {
     initialAmount: 'Initial Amount',
     finalAmount: 'Final Amount',
     totalSales: 'Total Sales',
-    expectedDrawer: 'Expected Drawer',
+    expectedDrawer: 'Expected Drawer (Cash)',
     difference: 'Difference',
+    selectPaymentMethod: 'Select Payment Method',
+    confirmPayment: 'Confirm Payment',
+    cash: 'Cash',
+    card: 'Card',
+    instapay: 'InstaPay',
+    cashSales: 'Cash Sales',
+    cardSales: 'Card Sales',
+    instapaySales: 'InstaPay Sales',
     categories: {
       HotDrinks: 'Hot Drinks',
       Coffee: 'Coffee',
@@ -310,10 +329,12 @@ const translations = {
     orderId: 'رقم الطلب',
     date: 'التاريخ',
     status: 'الحالة',
+    statusAll: 'الكل',
     pending: 'في الانتظار',
     paid: 'مدفوع',
     pay: 'دفع',
     noOrders: 'لا توجد طلبات',
+    noOrdersForFilter: 'لا توجد طلبات بهذه الحالة',
     table: 'الطاولة',
     toGo: 'سفري',
     selectTable: 'اختر الطاولة',
@@ -321,14 +342,16 @@ const translations = {
     addItems: 'إضافة عناصر',
     editingOrder: 'تعديل الطلب الحالي',
     orderManagement: 'إدارة الطلبات',
-    orderInstructions: 'انقر على الطلبات المعلقة لتحديثها كمدفوعة وطباعة الإيصال.',
-    paymentNote: 'جميع المدفوعات تتم نقدًا.',
+    orderInstructions: 'انقر على الطلبات المعلقة لاختيار طريقة الدفع وتحديثها كمدفوعة وطباعة الإيصال.',
+    paymentNote: 'المدفوعات النقدية فقط تؤثر على مبلغ الدرج. مبيعات البطاقة وInstaPay يتم تتبعها بشكل منفصل.',
     cancel: 'إلغاء',
     quantity: 'الكمية',
     extras: 'إضافات',
     cafeReceipt: 'إيصال المقهى',
     orderNumber: 'رقم الطلب',
     paymentCash: 'الدفع: نقدي',
+    paymentCard: 'الدفع: بطاقة',
+    paymentInstapay: 'الدفع: InstaPay',
     thankYou: 'شكرًا لزيارتكم!',
     occupied: 'مشغول',
     logout: 'تسجيل الخروج',
@@ -337,9 +360,17 @@ const translations = {
     shiftStart: 'بداية الوردية',
     shiftEnd: 'نهاية الوردية',
     initialAmount: 'المبلغ الأولي',
+    selectPaymentMethod: 'اختر طريقة الدفع',
+    confirmPayment: 'تأكيد الدفع',
+    cash: 'نقدي',
+    card: 'بطاقة',
+    instapay: 'InstaPay',
+    cashSales: 'مبيعات نقدية',
+    cardSales: 'مبيعات البطاقة',
+    instapaySales: 'مبيعات InstaPay',
     finalAmount: 'المبلغ النهائي',
     totalSales: 'إجمالي المبيعات',
-    expectedDrawer: 'الدرج المتوقع',
+    expectedDrawer: 'الدرج المتوقع (نقدي)',
     difference: 'الفرق',
     categories: {
       HotDrinks: 'مشروبات ساخنة',
@@ -443,6 +474,243 @@ const translations = {
   },
 };
 
+interface CheckoutModalProps {
+  orders: Order[];
+  selectedTable: number | 'to-go' | null;
+  onSelectTable: (table: number | 'to-go') => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  translations: {
+    selectOption: string;
+    toGo: string;
+    table: string;
+    occupied: string;
+    cancel: string;
+    checkout: string;
+  };
+}
+
+const CheckoutModal: React.FC<CheckoutModalProps> = ({
+  orders,
+  selectedTable,
+  onSelectTable,
+  onCancel,
+  onConfirm,
+  translations,
+}) => {
+  // Get tables that have pending orders
+  const occupiedTables = orders
+    .filter(order => order.status === 'pending' && typeof order.table === 'number')
+    .map(order => order.table as number);
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content">
+        <h3>{translations.selectOption}</h3>
+        <div className="table-options">
+          <button
+            className={`table-option ${selectedTable === 'to-go' ? 'selected' : ''}`}
+            onClick={() => onSelectTable('to-go')}
+          >
+            {translations.toGo}
+          </button>
+          {Array.from({ length: 10 }, (_, i) => i + 1).map(tableNum => {
+            const isOccupied = occupiedTables.includes(tableNum);
+            return (
+              <button
+                key={tableNum}
+                className={`table-option ${selectedTable === tableNum ? 'selected' : ''} ${isOccupied ? 'disabled' : ''}`}
+                onClick={() => !isOccupied && onSelectTable(tableNum)}
+                disabled={isOccupied}
+              >
+                {translations.table} {tableNum}
+                {isOccupied && <span className="occupied-indicator"> ({translations.occupied})</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="modal-buttons">
+          <button className="cancel-btn" onClick={onCancel}>
+            {translations.cancel}
+          </button>
+          <button
+            className="confirm-btn"
+            onClick={onConfirm}
+            disabled={!selectedTable}
+          >
+            {translations.checkout}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface LogoutModalProps {
+  initialDrawerAmount: number;
+  orders: Order[];
+  shiftStartTime: number | null;
+  finalDrawerAmount: string;
+  onFinalDrawerAmountChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  translations: {
+    shiftSummary: string;
+    shiftStart: string;
+    shiftEnd: string;
+    initialAmount: string;
+    totalSales: string;
+    cashSales: string;
+    cardSales: string;
+    instapaySales: string;
+    expectedDrawer: string;
+    finalDrawer: string;
+    cancel: string;
+    logout: string;
+  };
+}
+
+const LogoutModal: React.FC<LogoutModalProps> = ({
+  initialDrawerAmount,
+  orders,
+  shiftStartTime,
+  finalDrawerAmount,
+  onFinalDrawerAmountChange,
+  onCancel,
+  onConfirm,
+  translations,
+}) => {
+  const paidOrders = orders.filter(order => order.status === 'paid');
+  const cashSales = paidOrders.filter(isCashPayment).reduce((sum, order) => sum + order.total, 0);
+  const cardSales = paidOrders.filter(order => order.paymentMethod === 'card').reduce((sum, order) => sum + order.total, 0);
+  const instapaySales = paidOrders.filter(order => order.paymentMethod === 'instapay').reduce((sum, order) => sum + order.total, 0);
+  const totalSales = cashSales + cardSales + instapaySales;
+  const expectedDrawer = initialDrawerAmount + cashSales;
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal-content logout-modal">
+        <h3>{translations.shiftSummary}</h3>
+        <div className="shift-summary">
+          <div className="summary-row">
+            <span>{translations.shiftStart}:</span>
+            <span>{shiftStartTime ? new Date(shiftStartTime).toLocaleString() : ''}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.shiftEnd}:</span>
+            <span>{new Date().toLocaleString()}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.initialAmount}:</span>
+            <span>EGP{initialDrawerAmount.toFixed(2)}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.cashSales}:</span>
+            <span>EGP{cashSales.toFixed(2)}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.cardSales}:</span>
+            <span>EGP{cardSales.toFixed(2)}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.instapaySales}:</span>
+            <span>EGP{instapaySales.toFixed(2)}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.totalSales}:</span>
+            <span>EGP{totalSales.toFixed(2)}</span>
+          </div>
+          <div className="summary-row">
+            <span>{translations.expectedDrawer}:</span>
+            <span>EGP{expectedDrawer.toFixed(2)}</span>
+          </div>
+          <div className="summary-divider"></div>
+          <div className="final-drawer-input">
+            <label>{translations.finalDrawer}:</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={finalDrawerAmount}
+              onChange={(e) => onFinalDrawerAmountChange(e.target.value)}
+              placeholder="0.00"
+              required
+            />
+          </div>
+        </div>
+        <div className="modal-buttons">
+          <button className="cancel-btn" onClick={onCancel}>
+            {translations.cancel}
+          </button>
+          <button
+            className="confirm-btn"
+            onClick={onConfirm}
+            disabled={!finalDrawerAmount}
+          >
+            {translations.logout}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface AdminLoginModalProps {
+  username: string;
+  onUsernameChange: (value: string) => void;
+  password: string;
+  onPasswordChange: (value: string) => void;
+  error: boolean;
+  onCancel: () => void;
+  onSubmit: (e: React.FormEvent) => void;
+  cancelLabel: string;
+}
+
+const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
+  username,
+  onUsernameChange,
+  password,
+  onPasswordChange,
+  error,
+  onCancel,
+  onSubmit,
+  cancelLabel,
+}) => (
+  <div className="modal-overlay" onClick={onCancel}>
+    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+      <h3>Admin Login</h3>
+      <form onSubmit={onSubmit}>
+        <div className="login-field">
+          <label>Username:</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => onUsernameChange(e.target.value)}
+            autoFocus
+          />
+        </div>
+        <div className="login-field">
+          <label>Password:</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => onPasswordChange(e.target.value)}
+          />
+        </div>
+        {error && <p className="admin-login-error">Incorrect username or password.</p>}
+        <div className="modal-buttons">
+          <button type="button" className="cancel-btn" onClick={onCancel}>
+            {cancelLabel}
+          </button>
+          <button type="submit" className="confirm-btn">
+            Login
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+);
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -453,6 +721,7 @@ function App() {
   const [selectedTable, setSelectedTable] = useState<number | 'to-go' | null>(null);
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
   const [drawerAmount, setDrawerAmount] = useState<number>(0);
+  const [initialDrawerAmount, setInitialDrawerAmount] = useState<number>(0);
   const [shiftStartTime, setShiftStartTime] = useState<number | null>(null);
   const [cashierId, setCashierId] = useState<string>('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -476,12 +745,13 @@ function App() {
     const savedSession = localStorage.getItem('cafeActiveSession');
     if (savedSession) {
       const session = JSON.parse(savedSession);
-      const paidTotal = savedOrders
-        .filter((order) => order.status === 'paid')
+      const cashPaidTotal = savedOrders
+        .filter((order) => order.status === 'paid' && isCashPayment(order))
         .reduce((sum, order) => sum + order.total, 0);
       setIsLoggedIn(true);
       setCashierId(session.cashierId);
-      setDrawerAmount(session.initialDrawerAmount + paidTotal);
+      setInitialDrawerAmount(session.initialDrawerAmount);
+      setDrawerAmount(session.initialDrawerAmount + cashPaidTotal);
       setShiftStartTime(session.shiftStartTime);
     }
   }, []);
@@ -492,6 +762,7 @@ function App() {
     }
     const shiftStart = Date.now();
     setIsLoggedIn(true);
+    setInitialDrawerAmount(initialDrawer);
     setDrawerAmount(initialDrawer);
     setShiftStartTime(shiftStart);
     setCashierId(username);
@@ -538,18 +809,23 @@ function App() {
 
     const shiftEndTime = Date.now();
     const paidOrders = orders.filter(order => order.status === 'paid');
-    const totalSales = paidOrders.reduce((sum, order) => sum + order.total, 0);
-    const initialDrawer = drawerAmount - totalSales; // Calculate initial amount
-    const expectedDrawer = initialDrawer + totalSales;
+    const cashSales = paidOrders.filter(isCashPayment).reduce((sum, order) => sum + order.total, 0);
+    const cardSales = paidOrders.filter(order => order.paymentMethod === 'card').reduce((sum, order) => sum + order.total, 0);
+    const instapaySales = paidOrders.filter(order => order.paymentMethod === 'instapay').reduce((sum, order) => sum + order.total, 0);
+    const totalSales = cashSales + cardSales + instapaySales;
+    const expectedDrawer = initialDrawerAmount + cashSales;
     const difference = finalAmount - expectedDrawer;
 
     const shiftData = {
       cashierId,
       shiftStart: shiftStartTime,
       shiftEnd: shiftEndTime,
-      initialDrawer,
+      initialDrawer: initialDrawerAmount,
       finalDrawer: finalAmount,
       totalSales,
+      cashSales,
+      cardSales,
+      instapaySales,
       expectedDrawer,
       difference,
       ordersCount: orders.length,
@@ -571,6 +847,7 @@ function App() {
     setCart([]);
     setOrders([]);
     setDrawerAmount(0);
+    setInitialDrawerAmount(0);
     setShiftStartTime(null);
     setCashierId('');
     setShowLogoutModal(false);
@@ -645,25 +922,29 @@ function App() {
       items: order.items,
       total: order.total,
       paidAt: Date.now(),
+      paymentMethod: order.paymentMethod || 'cash',
     };
     const salesHistory = JSON.parse(localStorage.getItem('cafeSalesHistory') || '[]');
     salesHistory.push(saleRecord);
     localStorage.setItem('cafeSalesHistory', JSON.stringify(salesHistory));
   };
 
-  const payOrder = (orderId: string) => {
+  const payOrder = (orderId: string, paymentMethod: PaymentMethod) => {
     const updatedOrders = orders.map(order =>
-      order.id === orderId ? { ...order, status: 'paid' as const } : order
+      order.id === orderId ? { ...order, status: 'paid' as const, paymentMethod } : order
     );
     setOrders(updatedOrders);
     localStorage.setItem('cafeOrders', JSON.stringify(updatedOrders));
 
-    // Add payment to drawer
     const order = orders.find(o => o.id === orderId);
     if (order) {
-      setDrawerAmount(prev => prev + order.total);
-      recordSale(order);
-      printReceipt(order);
+      const paidOrder = { ...order, paymentMethod };
+      // Only cash actually lands in the physical drawer; card/InstaPay settle elsewhere
+      if (paymentMethod === 'cash') {
+        setDrawerAmount(prev => prev + order.total);
+      }
+      recordSale(paidOrder);
+      printReceipt(paidOrder);
     }
   };
 
@@ -685,7 +966,8 @@ function App() {
             <title>Receipt</title>
             <style>
               body { font-family: Arial, sans-serif; margin: 0; }
-              .banner { width: 100%; display: block; }
+              .logo-banner { display: flex; justify-content: center; padding: 24px 20px 4px; background: #ffffff; }
+              .logo-banner img { width: 70%; max-width: 260px; display: block; filter: brightness(0); }
               .receipt-body { padding: 20px; }
               .header { text-align: center; margin-bottom: 20px; }
               .item { display: flex; justify-content: space-between; margin: 5px 0; }
@@ -695,7 +977,9 @@ function App() {
             </style>
           </head>
           <body>
-            <img src="${bannerImage}" alt="Gooba banner" class="banner" />
+            <div class="logo-banner">
+              <img src="${goobaTextLogo}" alt="Gooba" />
+            </div>
             <div class="receipt-body">
               <div class="header">
                 <h2>${t.cafeReceipt}</h2>
@@ -715,7 +999,13 @@ function App() {
                 </div>
               </div>
               <div class="footer">
-                <p>${t.paymentCash}</p>
+                <p>${
+                  order.paymentMethod === 'card'
+                    ? t.paymentCard
+                    : order.paymentMethod === 'instapay'
+                    ? t.paymentInstapay
+                    : t.paymentCash
+                }</p>
                 <p>${t.thankYou}</p>
                 <p class="closing">Your Next Coffee Is Waiting, See You Soon!</p>
               </div>
@@ -778,164 +1068,48 @@ function App() {
     name: t.menuItems[item.id as keyof typeof t.menuItems],
   }));
 
-  const CheckoutModal = () => {
-    // Get tables that have pending orders
-    const occupiedTables = orders
-      .filter(order => order.status === 'pending' && typeof order.table === 'number')
-      .map(order => order.table as number);
-
-    return (
-      <div className="modal-overlay">
-        <div className="modal-content">
-          <h3>{t.selectOption}</h3>
-          <div className="table-options">
-            <button
-              className={`table-option ${selectedTable === 'to-go' ? 'selected' : ''}`}
-              onClick={() => setSelectedTable('to-go')}
-            >
-              {t.toGo}
-            </button>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map(tableNum => {
-              const isOccupied = occupiedTables.includes(tableNum);
-              return (
-                <button
-                  key={tableNum}
-                  className={`table-option ${selectedTable === tableNum ? 'selected' : ''} ${isOccupied ? 'disabled' : ''}`}
-                  onClick={() => !isOccupied && setSelectedTable(tableNum)}
-                  disabled={isOccupied}
-                >
-                  {t.table} {tableNum}
-                  {isOccupied && <span className="occupied-indicator"> ({t.occupied})</span>}
-                </button>
-              );
-            })}
-          </div>
-          <div className="modal-buttons">
-            <button className="cancel-btn" onClick={() => setShowCheckoutModal(false)}>
-              {t.cancel}
-            </button>
-            <button
-              className="confirm-btn"
-              onClick={confirmCheckout}
-              disabled={!selectedTable}
-            >
-              {t.checkout}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const LogoutModal = () => {
-    const paidOrders = orders.filter(order => order.status === 'paid');
-    const totalSales = paidOrders.reduce((sum, order) => sum + order.total, 0);
-    const initialDrawer = drawerAmount - totalSales;
-    const expectedDrawer = initialDrawer + totalSales;
-
-    return (
-      <div className="modal-overlay">
-        <div className="modal-content logout-modal">
-          <h3>{t.shiftSummary}</h3>
-          <div className="shift-summary">
-            <div className="summary-row">
-              <span>{t.shiftStart}:</span>
-              <span>{shiftStartTime ? new Date(shiftStartTime).toLocaleString() : ''}</span>
-            </div>
-            <div className="summary-row">
-              <span>{t.shiftEnd}:</span>
-              <span>{new Date().toLocaleString()}</span>
-            </div>
-            <div className="summary-row">
-              <span>{t.initialAmount}:</span>
-              <span>EGP{initialDrawer.toFixed(2)}</span>
-            </div>
-            <div className="summary-row">
-              <span>{t.totalSales}:</span>
-              <span>EGP{totalSales.toFixed(2)}</span>
-            </div>
-            <div className="summary-row">
-              <span>{t.expectedDrawer}:</span>
-              <span>EGP{expectedDrawer.toFixed(2)}</span>
-            </div>
-            <div className="summary-divider"></div>
-            <div className="final-drawer-input">
-              <label>{t.finalDrawer}:</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={finalDrawerAmount}
-                onChange={(e) => setFinalDrawerAmount(e.target.value)}
-                placeholder="0.00"
-                required
-              />
-            </div>
-          </div>
-          <div className="modal-buttons">
-            <button className="cancel-btn" onClick={() => setShowLogoutModal(false)}>
-              {t.cancel}
-            </button>
-            <button
-              className="confirm-btn"
-              onClick={confirmLogout}
-              disabled={!finalDrawerAmount}
-            >
-              {t.logout}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const AdminLoginModal = () => (
-    <div className="modal-overlay" onClick={() => setShowAdminLogin(false)}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h3>Admin Login</h3>
-        <form onSubmit={submitAdminLogin}>
-          <div className="login-field">
-            <label>Username:</label>
-            <input
-              type="text"
-              value={adminUsernameInput}
-              onChange={(e) => {
-                setAdminUsernameInput(e.target.value);
-                setAdminError(false);
-              }}
-              autoFocus
-            />
-          </div>
-          <div className="login-field">
-            <label>Password:</label>
-            <input
-              type="password"
-              value={adminPasswordInput}
-              onChange={(e) => {
-                setAdminPasswordInput(e.target.value);
-                setAdminError(false);
-              }}
-            />
-          </div>
-          {adminError && <p className="admin-login-error">Incorrect username or password.</p>}
-          <div className="modal-buttons">
-            <button type="button" className="cancel-btn" onClick={() => setShowAdminLogin(false)}>
-              {t.cancel}
-            </button>
-            <button type="submit" className="confirm-btn">
-              Login
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-
   return (
     <div className="app" dir={language === 'ar' ? 'rtl' : 'ltr'}>
-      {showCheckoutModal && <CheckoutModal />}
-      {showLogoutModal && <LogoutModal />}
-      {showAdminLogin && <AdminLoginModal />}
+      {showCheckoutModal && (
+        <CheckoutModal
+          orders={orders}
+          selectedTable={selectedTable}
+          onSelectTable={setSelectedTable}
+          onCancel={() => setShowCheckoutModal(false)}
+          onConfirm={confirmCheckout}
+          translations={t}
+        />
+      )}
+      {showLogoutModal && (
+        <LogoutModal
+          initialDrawerAmount={initialDrawerAmount}
+          orders={orders}
+          shiftStartTime={shiftStartTime}
+          finalDrawerAmount={finalDrawerAmount}
+          onFinalDrawerAmountChange={setFinalDrawerAmount}
+          onCancel={() => setShowLogoutModal(false)}
+          onConfirm={confirmLogout}
+          translations={t}
+        />
+      )}
+      {showAdminLogin && (
+        <AdminLoginModal
+          username={adminUsernameInput}
+          onUsernameChange={(value) => {
+            setAdminUsernameInput(value);
+            setAdminError(false);
+          }}
+          password={adminPasswordInput}
+          onPasswordChange={(value) => {
+            setAdminPasswordInput(value);
+            setAdminError(false);
+          }}
+          error={adminError}
+          onCancel={() => setShowAdminLogin(false)}
+          onSubmit={submitAdminLogin}
+          cancelLabel={t.cancel}
+        />
+      )}
       {showAdminDashboard ? (
         <AdminDashboard onBack={() => setShowAdminDashboard(false)} />
       ) : isLoggedIn ? (
@@ -946,6 +1120,7 @@ function App() {
             onBack={() => setShowOrders(false)}
             onAddItems={addItemsToOrder}
             onLogout={handleLogout}
+            drawerAmount={drawerAmount}
             language={language}
             onToggleLanguage={toggleLanguage}
             translations={t}

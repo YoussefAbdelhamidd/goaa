@@ -10,6 +10,8 @@ interface CartItem {
   extras?: string[];
 }
 
+type PaymentMethod = 'cash' | 'card' | 'instapay';
+
 interface SaleRecord {
   orderId: string;
   cashierId: string;
@@ -17,6 +19,7 @@ interface SaleRecord {
   items: CartItem[];
   total: number;
   paidAt: number;
+  paymentMethod?: PaymentMethod;
 }
 
 interface ShiftRecord {
@@ -26,6 +29,9 @@ interface ShiftRecord {
   initialDrawer: number;
   finalDrawer: number;
   totalSales: number;
+  cashSales?: number;
+  cardSales?: number;
+  instapaySales?: number;
   expectedDrawer: number;
   difference: number;
   ordersCount: number;
@@ -72,6 +78,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
   const totalOrders = filteredSales.length;
   const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+
+  const revenueByPaymentMethod = useMemo(() => {
+    const totals: Record<PaymentMethod, number> = { cash: 0, card: 0, instapay: 0 };
+    filteredSales.forEach((sale) => {
+      const method = sale.paymentMethod || 'cash';
+      totals[method] += sale.total;
+    });
+    return totals;
+  }, [filteredSales]);
 
   const revenueByCashier = useMemo(() => {
     const map = new Map<string, { revenue: number; orders: number }>();
@@ -173,6 +188,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
           </div>
 
           <div className="admin-panel">
+            <h3>Sales by Payment Method</h3>
+            {totalOrders === 0 ? (
+              <p className="admin-empty">No sales recorded for this period.</p>
+            ) : (
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Cash</td>
+                    <td>EGP{revenueByPaymentMethod.cash.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td>Card</td>
+                    <td>EGP{revenueByPaymentMethod.card.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <td>InstaPay</td>
+                    <td>EGP{revenueByPaymentMethod.instapay.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="admin-panel">
             <h3>Top Selling Items</h3>
             {topItems.length === 0 ? (
               <p className="admin-empty">No sales recorded for this period.</p>
@@ -209,26 +254,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onBack }) => {
                 <tr>
                   <th>Cashier</th>
                   <th>Date</th>
-                  <th>Sales</th>
+                  <th>Cash Sales</th>
+                  <th>Card / InstaPay</th>
+                  <th>Total Sales</th>
                   <th>Expected Drawer</th>
                   <th>Final Drawer</th>
                   <th>Difference</th>
                 </tr>
               </thead>
               <tbody>
-                {recentShifts.map((shift, index) => (
-                  <tr key={`${shift.cashierId}-${shift.shiftEnd}-${index}`}>
-                    <td>{shift.cashierId}</td>
-                    <td>{shift.date}</td>
-                    <td>EGP{shift.totalSales.toFixed(2)}</td>
-                    <td>EGP{shift.expectedDrawer.toFixed(2)}</td>
-                    <td>EGP{shift.finalDrawer.toFixed(2)}</td>
-                    <td className={shift.difference === 0 ? '' : shift.difference > 0 ? 'admin-diff-positive' : 'admin-diff-negative'}>
-                      {shift.difference > 0 ? '+' : ''}
-                      EGP{shift.difference.toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
+                {recentShifts.map((shift, index) => {
+                  const nonCashSales = (shift.cardSales ?? 0) + (shift.instapaySales ?? 0);
+                  return (
+                    <tr key={`${shift.cashierId}-${shift.shiftEnd}-${index}`}>
+                      <td>{shift.cashierId}</td>
+                      <td>{shift.date}</td>
+                      <td>EGP{(shift.cashSales ?? shift.totalSales).toFixed(2)}</td>
+                      <td>EGP{nonCashSales.toFixed(2)}</td>
+                      <td>EGP{shift.totalSales.toFixed(2)}</td>
+                      <td>EGP{shift.expectedDrawer.toFixed(2)}</td>
+                      <td>EGP{shift.finalDrawer.toFixed(2)}</td>
+                      <td className={shift.difference === 0 ? '' : shift.difference > 0 ? 'admin-diff-positive' : 'admin-diff-negative'}>
+                        {shift.difference > 0 ? '+' : ''}
+                        EGP{shift.difference.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+
+type PaymentMethod = 'cash' | 'card' | 'instapay';
 
 interface MenuItem {
   id: number;
@@ -19,14 +21,16 @@ interface Order {
   timestamp: number;
   status: 'pending' | 'paid';
   table?: number | 'to-go';
+  paymentMethod?: PaymentMethod;
 }
 
 interface OrdersViewProps {
   orders: Order[];
-  onPayOrder: (orderId: string) => void;
+  onPayOrder: (orderId: string, paymentMethod: PaymentMethod) => void;
   onBack: () => void;
   onAddItems: (orderId: string) => void;
   onLogout: () => void;
+  drawerAmount: number;
   language: 'en' | 'ar';
   onToggleLanguage: () => void;
   translations: {
@@ -34,10 +38,12 @@ interface OrdersViewProps {
     orderId: string;
     date: string;
     status: string;
+    statusAll: string;
     pending: string;
     paid: string;
     pay: string;
     noOrders: string;
+    noOrdersForFilter: string;
     total: string;
     table: string;
     toGo: string;
@@ -47,8 +53,15 @@ interface OrdersViewProps {
     paymentNote: string;
     cancel: string;
     logout: string;
+    selectPaymentMethod: string;
+    confirmPayment: string;
+    cash: string;
+    card: string;
+    instapay: string;
   };
 }
+
+const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'instapay'];
 
 const OrdersView: React.FC<OrdersViewProps> = ({
   orders,
@@ -56,10 +69,40 @@ const OrdersView: React.FC<OrdersViewProps> = ({
   onBack,
   onAddItems,
   onLogout,
+  drawerAmount,
   language,
   onToggleLanguage,
   translations,
 }) => {
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
+  const [orderPendingPayment, setOrderPendingPayment] = useState<Order | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cash');
+
+  const filteredOrders = useMemo(() => {
+    const sorted = [...orders].sort((a, b) => b.timestamp - a.timestamp);
+    if (statusFilter === 'all') return sorted;
+    return sorted.filter((order) => order.status === statusFilter);
+  }, [orders, statusFilter]);
+
+  const pendingCount = orders.filter((order) => order.status === 'pending').length;
+  const paidCount = orders.filter((order) => order.status === 'paid').length;
+
+  const openPaymentModal = (order: Order) => {
+    setOrderPendingPayment(order);
+    setSelectedMethod('cash');
+  };
+
+  const closePaymentModal = () => setOrderPendingPayment(null);
+
+  const confirmPayment = () => {
+    if (!orderPendingPayment) return;
+    onPayOrder(orderPendingPayment.id, selectedMethod);
+    setOrderPendingPayment(null);
+  };
+
+  const paymentMethodLabel = (method: PaymentMethod) =>
+    method === 'cash' ? translations.cash : method === 'card' ? translations.card : translations.instapay;
+
   return (
     <div className="cashier-view">
       <div className="cart-section">
@@ -75,26 +118,64 @@ const OrdersView: React.FC<OrdersViewProps> = ({
             </button>
           </div>
         </div>
-        {orders.length === 0 ? (
-          <p className="empty-orders">{translations.noOrders}</p>
+
+        <div className="status-tabs">
+          <button
+            className={`status-tab-btn ${statusFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('all')}
+          >
+            {translations.statusAll}
+            <span className="status-tab-count">{orders.length}</span>
+          </button>
+          <button
+            className={`status-tab-btn ${statusFilter === 'pending' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('pending')}
+          >
+            {translations.pending}
+            <span className="status-tab-count">{pendingCount}</span>
+          </button>
+          <button
+            className={`status-tab-btn ${statusFilter === 'paid' ? 'active' : ''}`}
+            onClick={() => setStatusFilter('paid')}
+          >
+            {translations.paid}
+            <span className="status-tab-count">{paidCount}</span>
+          </button>
+        </div>
+
+        {filteredOrders.length === 0 ? (
+          <p className="empty-orders">
+            {orders.length === 0 ? translations.noOrders : translations.noOrdersForFilter}
+          </p>
         ) : (
           <div className="orders-list">
-            {orders.map((order) => (
-              <div key={order.id} className="order-item">
-                <div className="order-header">
-                  <h3>{translations.orderId}: {order.id}</h3>
-                  <span className={`status ${order.status}`}>
+            {filteredOrders.map((order) => (
+              <div key={order.id} className="order-card">
+                <div className="order-card-top">
+                  <div className="order-card-heading">
+                    <span className="order-card-id">{translations.orderId} #{order.id.slice(-6)}</span>
+                    <span className="order-card-date">
+                      {new Date(order.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  <span className={`order-badge order-badge-${order.status}`}>
                     {order.status === 'pending' ? translations.pending : translations.paid}
                   </span>
                 </div>
-                <p className="order-date">
-                  {translations.date}: {new Date(order.timestamp).toLocaleString()}
-                </p>
-                {order.table && (
-                  <p className="order-table">
-                    {order.table === 'to-go' ? translations.toGo : `${translations.table} ${order.table}`}
-                  </p>
-                )}
+
+                <div className="order-card-meta">
+                  {order.table && (
+                    <span className="order-meta-pill">
+                      {order.table === 'to-go' ? translations.toGo : `${translations.table} ${order.table}`}
+                    </span>
+                  )}
+                  {order.status === 'paid' && order.paymentMethod && (
+                    <span className={`order-meta-pill payment-pill payment-pill-${order.paymentMethod}`}>
+                      {paymentMethodLabel(order.paymentMethod)}
+                    </span>
+                  )}
+                </div>
+
                 <div className="order-items">
                   {order.items.map((item) => (
                     <div key={item.id} className="order-item-detail">
@@ -103,9 +184,11 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                     </div>
                   ))}
                 </div>
+
                 <div className="order-total">
                   <strong>{translations.total}: EGP{order.total.toFixed(2)}</strong>
                 </div>
+
                 {order.status === 'pending' && (
                   <div className="order-actions">
                     <button
@@ -115,7 +198,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                       {translations.addItems}
                     </button>
                     <button
-                      onClick={() => onPayOrder(order.id)}
+                      onClick={() => openPaymentModal(order)}
                       className="pay-btn"
                     >
                       {translations.pay}
@@ -127,13 +210,49 @@ const OrdersView: React.FC<OrdersViewProps> = ({
           </div>
         )}
       </div>
+
       <div className="menu-section">
         <h2>{translations.orderManagement}</h2>
+        <div className="drawer-status-card">
+          <span className="drawer-status-label">{translations.cash}</span>
+          <strong className="drawer-status-value">EGP{drawerAmount.toFixed(2)}</strong>
+        </div>
         <div className="orders-info">
           <p>{translations.orderInstructions}</p>
           <p>{translations.paymentNote}</p>
         </div>
       </div>
+
+      {orderPendingPayment && (
+        <div className="modal-overlay" onClick={closePaymentModal}>
+          <div className="modal-content payment-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{translations.selectPaymentMethod}</h3>
+            <div className="order-total payment-modal-total">
+              <strong>{translations.total}: EGP{orderPendingPayment.total.toFixed(2)}</strong>
+            </div>
+            <div className="pill-group payment-method-group">
+              {PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method}
+                  type="button"
+                  className={`pill-option ${selectedMethod === method ? 'selected' : ''}`}
+                  onClick={() => setSelectedMethod(method)}
+                >
+                  {paymentMethodLabel(method)}
+                </button>
+              ))}
+            </div>
+            <div className="modal-buttons">
+              <button className="cancel-btn" type="button" onClick={closePaymentModal}>
+                {translations.cancel}
+              </button>
+              <button className="confirm-btn" type="button" onClick={confirmPayment}>
+                {translations.confirmPayment}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
