@@ -7,6 +7,7 @@ interface MenuItem {
   price: number;
   image: string;
   category: string;
+  available?: boolean;
 }
 
 interface CartItem extends MenuItem {
@@ -84,6 +85,7 @@ const CashierView: React.FC<CashierViewProps> = ({
   const [activeCategory, setActiveCategory] = useState(categories[0] || '');
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Refs for scrolling
   const categoryRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -130,6 +132,7 @@ const CashierView: React.FC<CashierViewProps> = ({
   }, [activeCategory]);
 
   const openItemModal = (item: MenuItem) => {
+    if (item.available === false) return;
     setSelectedItem(item);
     setSelectedQuantity(1);
     setSelectedExtras([]);
@@ -188,6 +191,16 @@ const CashierView: React.FC<CashierViewProps> = ({
             <button onClick={onToggleLanguage} className="lang-toggle">
               {language === 'en' ? 'العربية' : 'English'}
             </button>
+          </div>
+        </div>
+        <div className="cart-summary-strip">
+          <div>
+            <span>Items</span>
+            <strong>{cartQuantity}</strong>
+          </div>
+          <div>
+            <span>Total</span>
+            <strong>EGP{total.toFixed(2)}</strong>
           </div>
         </div>
         {cart.length === 0 ? (
@@ -325,7 +338,13 @@ const CashierView: React.FC<CashierViewProps> = ({
         )}
       </div>
       <div className="menu-section">
-        <h2>{translations.menu}</h2>
+        <div className="menu-topbar">
+          <div>
+            <span>Current menu</span>
+            <h2>{translations.menu}</h2>
+          </div>
+          <strong>{menuItems.length} items</strong>
+        </div>
         <div className="category-buttons" ref={categoryButtonsRowRef}>
           {categories.map((category) => (
             <button
@@ -347,14 +366,25 @@ const CashierView: React.FC<CashierViewProps> = ({
             >
               <h3 className="category-title">{translations.categories[category]}</h3>
               <div className="category-items">
-                {groupedItems[category].map((item) => (
-                  <div key={item.id} className="menu-item" onClick={() => openItemModal(item)}>
+                {groupedItems[category].map((item) => {
+                  const isOutOfStock = item.available === false;
+                  return (
+                  <div
+                    key={item.id}
+                    className={`menu-item ${isOutOfStock ? 'out-of-stock' : ''}`}
+                    onClick={() => openItemModal(item)}
+                    aria-disabled={isOutOfStock}
+                  >
                     <img src={item.image} alt={item.name} className="menu-item-image" />
+                    {isOutOfStock && <span className="stock-badge">Out of stock</span>}
                     <h3>{item.name}</h3>
                     <p className="price">EGP{item.price.toFixed(2)}</p>
-                    <button className="add-btn" type="button">{translations.addToCart}</button>
+                    <button className="add-btn" type="button" disabled={isOutOfStock}>
+                      {isOutOfStock ? 'Out of stock' : translations.addToCart}
+                    </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}

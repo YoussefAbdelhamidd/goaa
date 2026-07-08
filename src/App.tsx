@@ -4,58 +4,21 @@ import CashierView from './components/CashierView';
 import OrdersView from './components/OrdersView';
 import AdminDashboard from './components/AdminDashboard';
 import goobaTextLogo from './assets/GOOBA-text.svg';
+import { posBackend } from './lib/posBackend';
+import type { AppUser, MenuItem, CartItem, Order, PaymentMethod, SaleRecord, ShiftRecord, Offer } from './lib/posTypes';
 import './App.css';
 
-const ADMIN_CREDENTIALS: Record<string, string> = {
-  Omar: '01277554354',
-};
-
-const CASHIER_CREDENTIALS: Record<string, string> = {
-  Gooba: '01008191994',
-  Elsos: '01226210927',
-  Mohanad: '01207266413',
-};
-
-interface MenuItem {
-  id: number;
-  name: string;
-  price: number;
-  image: string;
-  category: string;
-}
-
-interface CartItem extends MenuItem {
-  quantity: number;
-  extras?: string[];
-}
-
-type PaymentMethod = 'cash' | 'card' | 'instapay';
-
-interface Order {
-  id: string;
-  items: CartItem[];
-  total: number;
-  timestamp: number;
-  status: 'pending' | 'paid';
-  table?: number | 'to-go';
-  cashierId?: string;
-  paymentMethod?: PaymentMethod;
-}
-
-interface SaleRecord {
-  orderId: string;
-  cashierId: string;
-  table?: number | 'to-go';
-  items: CartItem[];
-  total: number;
-  paidAt: number;
-  paymentMethod: PaymentMethod;
-}
+const DEFAULT_USERS: AppUser[] = [
+  { id: 'admin-omar', username: 'Omar', password: '01277554354', role: 'admin', active: true },
+  { id: 'cashier-gooba', username: 'Gooba', password: '01008191994', role: 'cashier', active: true },
+  { id: 'cashier-elsos', username: 'Elsos', password: '01226210927', role: 'cashier', active: true },
+  { id: 'cashier-mohanad', username: 'Mohanad', password: '01207266413', role: 'cashier', active: true },
+];
 
 // Orders paid before payment methods were tracked are treated as cash for drawer math
 const isCashPayment = (order: Order) => !order.paymentMethod || order.paymentMethod === 'cash';
 
-const menuItems: MenuItem[] = [
+const DEFAULT_MENU_ITEMS: MenuItem[] = [
   // Hot Drinks
   { id: 1, name: 'Tea', price: 28, image: 'https://loremflickr.com/200/200/black,tea,cup?lock=101', category: 'HotDrinks' },
   { id: 2, name: 'Milk Tea', price: 43, image: 'https://loremflickr.com/200/200/milk,tea,chai?lock=102', category: 'HotDrinks' },
@@ -676,12 +639,15 @@ const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   onSubmit,
   cancelLabel,
 }) => (
-  <div className="modal-overlay" onClick={onCancel}>
-    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-      <h3>Admin Login</h3>
-      <form onSubmit={onSubmit}>
-        <div className="login-field">
-          <label>Username:</label>
+  <div className="modal-overlay admin-login-overlay" onClick={onCancel}>
+    <div className="modal-content admin-login-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="admin-login-heading">
+        <span className="admin-login-kicker">Restricted access</span>
+        <h3>Admin Login</h3>
+      </div>
+      <form className="admin-login-form" onSubmit={onSubmit}>
+        <div className="admin-field">
+          <label>Username</label>
           <input
             type="text"
             value={username}
@@ -689,8 +655,8 @@ const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
             autoFocus
           />
         </div>
-        <div className="login-field">
-          <label>Password:</label>
+        <div className="admin-field">
+          <label>Password</label>
           <input
             type="password"
             value={password}
@@ -731,33 +697,61 @@ function App() {
   const [adminUsernameInput, setAdminUsernameInput] = useState('');
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [adminError, setAdminError] = useState(false);
+  const [users, setUsers] = useState<AppUser[]>(DEFAULT_USERS);
+  const [menuCatalog, setMenuCatalog] = useState<MenuItem[]>(DEFAULT_MENU_ITEMS);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
+  const [shifts, setShifts] = useState<ShiftRecord[]>([]);
 
   const t = translations[language];
 
   // Resume an active cashier session (and its orders) if one is already open on this device
   useEffect(() => {
-    const savedOrdersRaw = localStorage.getItem('cafeOrders');
-    const savedOrders: Order[] = savedOrdersRaw ? JSON.parse(savedOrdersRaw) : [];
-    if (savedOrdersRaw) {
-      setOrders(savedOrders);
-    }
+    const loadBackendState = async () => {
+      const [loadedUsers, loadedMenuItems, loadedOffers, loadedOrders, loadedSales, loadedShifts] =
+        await Promise.all([
+          posBackend.getUsers(DEFAULT_USERS),
+          posBackend.getMenuItems(DEFAULT_MENU_ITEMS),
+          posBackend.getOffers(),
+          posBackend.getOrders(),
+          posBackend.getSales(),
+          posBackend.getShifts(),
+        ]);
 
-    const savedSession = localStorage.getItem('cafeActiveSession');
-    if (savedSession) {
-      const session = JSON.parse(savedSession);
-      const cashPaidTotal = savedOrders
-        .filter((order) => order.status === 'paid' && isCashPayment(order))
-        .reduce((sum, order) => sum + order.total, 0);
-      setIsLoggedIn(true);
-      setCashierId(session.cashierId);
-      setInitialDrawerAmount(session.initialDrawerAmount);
-      setDrawerAmount(session.initialDrawerAmount + cashPaidTotal);
-      setShiftStartTime(session.shiftStartTime);
-    }
+      setUsers(loadedUsers.length ? loadedUsers : DEFAULT_USERS);
+      setMenuCatalog(loadedMenuItems.length ? loadedMenuItems : DEFAULT_MENU_ITEMS);
+      setOffers(loadedOffers);
+      setOrders(loadedOrders);
+      setSalesHistory(loadedSales);
+      setShifts(loadedShifts);
+
+      const savedSession = localStorage.getItem('cafeActiveSession');
+      if (savedSession) {
+        const session = JSON.parse(savedSession);
+        const cashPaidTotal = loadedOrders
+          .filter((order) => order.status === 'paid' && isCashPayment(order))
+          .reduce((sum, order) => sum + order.total, 0);
+        setIsLoggedIn(true);
+        setCashierId(session.cashierId);
+        setInitialDrawerAmount(session.initialDrawerAmount);
+        setDrawerAmount(session.initialDrawerAmount + cashPaidTotal);
+        setShiftStartTime(session.shiftStartTime);
+      }
+    };
+
+    loadBackendState().catch((error) => {
+      console.error('Unable to load backend state', error);
+    });
   }, []);
 
   const handleLogin = (username: string, password: string, initialDrawer: number) => {
-    if (CASHIER_CREDENTIALS[username] !== password) {
+    const cashier = users.find((user) =>
+      user.username === username &&
+      user.password === password &&
+      user.role === 'cashier' &&
+      user.active
+    );
+    if (!cashier) {
       return false;
     }
     const shiftStart = Date.now();
@@ -787,7 +781,13 @@ function App() {
 
   const submitAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (ADMIN_CREDENTIALS[adminUsernameInput] === adminPasswordInput) {
+    const admin = users.find((user) =>
+      user.username === adminUsernameInput &&
+      user.password === adminPasswordInput &&
+      user.role === 'admin' &&
+      user.active
+    );
+    if (admin) {
       setShowAdminLogin(false);
       setShowAdminDashboard(true);
     } else {
@@ -803,7 +803,7 @@ function App() {
     setShowLogoutModal(true);
   };
 
-  const confirmLogout = () => {
+  const confirmLogout = async () => {
     const finalAmount = parseFloat(finalDrawerAmount);
     if (isNaN(finalAmount) || finalAmount < 0) return;
 
@@ -833,14 +833,12 @@ function App() {
       date: new Date().toISOString().split('T')[0],
     };
 
-    // Save shift data locally
-    const existingShifts = JSON.parse(localStorage.getItem('cafeShifts') || '[]');
-    existingShifts.push(shiftData);
-    localStorage.setItem('cafeShifts', JSON.stringify(existingShifts));
+    await posBackend.recordShift(shiftData);
+    setShifts((prev) => [...prev, shiftData]);
 
     // End the session so the device is free for the next cashier to log in
     localStorage.removeItem('cafeActiveSession');
-    localStorage.removeItem('cafeOrders');
+    await posBackend.clearOrders();
 
     // Reset state
     setIsLoggedIn(false);
@@ -856,7 +854,7 @@ function App() {
     setEditingOrderId(null);
   };
 
-  const saveOrder = () => {
+  const saveOrder = async () => {
     if (cart.length === 0) return;
 
     if (editingOrderId) {
@@ -868,7 +866,8 @@ function App() {
           : order
       );
       setOrders(updatedOrders);
-      localStorage.setItem('cafeOrders', JSON.stringify(updatedOrders));
+      const updatedOrder = updatedOrders.find((order) => order.id === editingOrderId);
+      if (updatedOrder) await posBackend.saveOrder(updatedOrder);
       setCart([]);
       setEditingOrderId(null);
     } else {
@@ -877,7 +876,7 @@ function App() {
     }
   };
 
-  const confirmCheckout = () => {
+  const confirmCheckout = async () => {
     if (!selectedTable) return;
 
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -890,7 +889,8 @@ function App() {
           : order
       );
       setOrders(updatedOrders);
-      localStorage.setItem('cafeOrders', JSON.stringify(updatedOrders));
+      const updatedOrder = updatedOrders.find((order) => order.id === editingOrderId);
+      if (updatedOrder) await posBackend.saveOrder(updatedOrder);
       setEditingOrderId(null);
     } else {
       // Create new order
@@ -906,7 +906,7 @@ function App() {
 
       const updatedOrders = [...orders, newOrder];
       setOrders(updatedOrders);
-      localStorage.setItem('cafeOrders', JSON.stringify(updatedOrders));
+      await posBackend.saveOrder(newOrder);
     }
 
     setCart([]); // Clear cart after checkout
@@ -914,7 +914,7 @@ function App() {
     setSelectedTable(null);
   };
 
-  const recordSale = (order: Order) => {
+  const recordSale = async (order: Order) => {
     const saleRecord: SaleRecord = {
       orderId: order.id,
       cashierId: order.cashierId || cashierId,
@@ -924,17 +924,17 @@ function App() {
       paidAt: Date.now(),
       paymentMethod: order.paymentMethod || 'cash',
     };
-    const salesHistory = JSON.parse(localStorage.getItem('cafeSalesHistory') || '[]');
-    salesHistory.push(saleRecord);
-    localStorage.setItem('cafeSalesHistory', JSON.stringify(salesHistory));
+    await posBackend.recordSale(saleRecord);
+    setSalesHistory((prev) => [...prev, saleRecord]);
   };
 
-  const payOrder = (orderId: string, paymentMethod: PaymentMethod) => {
+  const payOrder = async (orderId: string, paymentMethod: PaymentMethod) => {
     const updatedOrders = orders.map(order =>
       order.id === orderId ? { ...order, status: 'paid' as const, paymentMethod } : order
     );
     setOrders(updatedOrders);
-    localStorage.setItem('cafeOrders', JSON.stringify(updatedOrders));
+    const updatedOrder = updatedOrders.find((order) => order.id === orderId);
+    if (updatedOrder) await posBackend.saveOrder(updatedOrder);
 
     const order = orders.find(o => o.id === orderId);
     if (order) {
@@ -943,7 +943,7 @@ function App() {
       if (paymentMethod === 'cash') {
         setDrawerAmount(prev => prev + order.total);
       }
-      recordSale(paidOrder);
+      await recordSale(paidOrder);
       printReceipt(paidOrder);
     }
   };
@@ -1063,10 +1063,50 @@ function App() {
     );
   };
 
-  const translatedMenuItems = menuItems.map(item => ({
-    ...item,
-    name: t.menuItems[item.id as keyof typeof t.menuItems],
-  }));
+  const translatedMenuItems = menuCatalog
+    .map(item => {
+      const activeOffer = offers.find((offer) => offer.active && offer.menuItemId === item.id);
+      const translatedName = t.menuItems[item.id as keyof typeof t.menuItems] || item.name;
+      const offerPrice = activeOffer
+        ? item.price * (1 - activeOffer.discountPercent / 100)
+        : item.price;
+
+      return {
+        ...item,
+        name: activeOffer ? `${translatedName} (${activeOffer.title})` : translatedName,
+        price: Math.max(0, Number(offerPrice.toFixed(2))),
+      };
+    });
+
+  const saveAdminUser = async (user: AppUser) => {
+    await posBackend.saveUser(user);
+    setUsers(await posBackend.getUsers(DEFAULT_USERS));
+  };
+
+  const deleteAdminUser = async (id: string) => {
+    await posBackend.deleteUser(id);
+    setUsers(await posBackend.getUsers(DEFAULT_USERS));
+  };
+
+  const saveAdminMenuItem = async (item: MenuItem) => {
+    await posBackend.saveMenuItem(item);
+    setMenuCatalog(await posBackend.getMenuItems(DEFAULT_MENU_ITEMS));
+  };
+
+  const deleteAdminMenuItem = async (id: number) => {
+    await posBackend.deleteMenuItem(id);
+    setMenuCatalog(await posBackend.getMenuItems(DEFAULT_MENU_ITEMS));
+  };
+
+  const saveAdminOffer = async (offer: Offer) => {
+    await posBackend.saveOffer(offer);
+    setOffers(await posBackend.getOffers());
+  };
+
+  const deleteAdminOffer = async (id: string) => {
+    await posBackend.deleteOffer(id);
+    setOffers(await posBackend.getOffers());
+  };
 
   return (
     <div className="app" dir={language === 'ar' ? 'rtl' : 'ltr'}>
@@ -1111,7 +1151,20 @@ function App() {
         />
       )}
       {showAdminDashboard ? (
-        <AdminDashboard onBack={() => setShowAdminDashboard(false)} />
+        <AdminDashboard
+          onBack={() => setShowAdminDashboard(false)}
+          users={users}
+          menuItems={menuCatalog}
+          offers={offers}
+          salesHistory={salesHistory}
+          shifts={shifts}
+          onSaveUser={saveAdminUser}
+          onDeleteUser={deleteAdminUser}
+          onSaveMenuItem={saveAdminMenuItem}
+          onDeleteMenuItem={deleteAdminMenuItem}
+          onSaveOffer={saveAdminOffer}
+          onDeleteOffer={deleteAdminOffer}
+        />
       ) : isLoggedIn ? (
         showOrders ? (
           <OrdersView

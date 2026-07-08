@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import bannerImage from '../assets/banner.png';
+import logo from '../assets/Main logo.png';
 
 interface LoginProps {
   onLogin: (username: string, password: string, initialDrawer: number) => boolean;
@@ -41,6 +42,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, onToggleLanguage, language, tran
       </div>
 
       <div className="login-card">
+        <div className="login-brand-mark">
+          <img src={logo} alt="Gooba" />
+          <div>
+            <span>Gooba POS</span>
+            <strong>Shift Login</strong>
+          </div>
+        </div>
         <div className="login-card-header">
           <h2>{translations.login}</h2>
           <p>Enter your cashier credentials to start your shift.</p>
