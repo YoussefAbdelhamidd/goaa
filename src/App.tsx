@@ -477,7 +477,7 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({
           >
             {translations.toGo}
           </button>
-          {Array.from({ length: 10 }, (_, i) => i + 1).map(tableNum => {
+          {Array.from({ length: 15 }, (_, i) => i + 1).map(tableNum => {
             const isOccupied = occupiedTables.includes(tableNum);
             return (
               <button
@@ -948,6 +948,26 @@ function App() {
     }
   };
 
+  const cancelOrder = async (orderId: string) => {
+    const order = orders.find((item) => item.id === orderId);
+    const sale = salesHistory.find((item) => item.orderId === orderId);
+    if (!order && !sale) return;
+
+    if (order?.status === 'paid' || sale) {
+      await posBackend.deleteSaleByOrderId(orderId);
+    }
+    if (order) {
+      await posBackend.deleteOrder(orderId);
+    }
+
+    setOrders((prev) => prev.filter((item) => item.id !== orderId));
+    setSalesHistory((prev) => prev.filter((sale) => sale.orderId !== orderId));
+
+    if (order && isCashPayment(order)) {
+      setDrawerAmount((prev) => Math.max(initialDrawerAmount, prev - order.total));
+    }
+  };
+
   const addItemsToOrder = (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
@@ -1156,6 +1176,7 @@ function App() {
           users={users}
           menuItems={menuCatalog}
           offers={offers}
+          orders={orders}
           salesHistory={salesHistory}
           shifts={shifts}
           onSaveUser={saveAdminUser}
@@ -1164,6 +1185,7 @@ function App() {
           onDeleteMenuItem={deleteAdminMenuItem}
           onSaveOffer={saveAdminOffer}
           onDeleteOffer={deleteAdminOffer}
+          onCancelOrder={cancelOrder}
         />
       ) : isLoggedIn ? (
         showOrders ? (

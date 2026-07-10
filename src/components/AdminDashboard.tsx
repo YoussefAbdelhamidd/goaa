@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import type { AppUser, MenuItem, Offer, PaymentMethod, SaleRecord, ShiftRecord } from '../lib/posTypes';
+import type { AppUser, MenuItem, Offer, Order, PaymentMethod, SaleRecord, ShiftRecord } from '../lib/posTypes';
 import { backendMode } from '../lib/posBackend';
 
 interface AdminDashboardProps {
@@ -7,6 +7,7 @@ interface AdminDashboardProps {
   users: AppUser[];
   menuItems: MenuItem[];
   offers: Offer[];
+  orders: Order[];
   salesHistory: SaleRecord[];
   shifts: ShiftRecord[];
   onSaveUser: (user: AppUser) => Promise<void>;
@@ -15,10 +16,20 @@ interface AdminDashboardProps {
   onDeleteMenuItem: (id: number) => Promise<void>;
   onSaveOffer: (offer: Offer) => Promise<void>;
   onDeleteOffer: (id: string) => Promise<void>;
+  onCancelOrder: (id: string) => Promise<void>;
 }
 
-type DateFilter = 'today' | 'week' | 'all';
-type AdminTab = 'reports' | 'users' | 'menu' | 'offers';
+type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
+type AdminTab = 'reports' | 'orders' | 'users' | 'menu' | 'offers';
+type AdminOrderRow = {
+  id: string;
+  timestamp: number;
+  cashierId?: string;
+  table?: number | 'to-go';
+  status: 'pending' | 'paid';
+  paymentMethod?: PaymentMethod;
+  total: number;
+};
 
 const blankUser = (): AppUser => ({
   id: `user-${Date.now()}`,
@@ -45,9 +56,15 @@ const blankOffer = (items: MenuItem[]): Offer => ({
   active: true,
 });
 
-const startOfToday = () => {
-  const d = new Date();
+const startOfDay = (date = new Date()) => {
+  const d = new Date(date);
   d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+const addDays = (timestamp: number, days: number) => {
+  const d = new Date(timestamp);
+  d.setDate(d.getDate() + days);
   return d.getTime();
 };
 
@@ -59,11 +76,95 @@ const startOfWeek = () => {
   return d.getTime();
 };
 
+const startOfMonth = () => {
+  const d = new Date();
+  d.setDate(1);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+const toDateInputValue = (date = new Date()) => {
+  const d = new Date(date);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 10);
+};
+
+const dateInputToTimestamp = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return startOfDay(new Date(year, month - 1, day));
+};
+
+const dateInputToDate = (value: string) => {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const formatCalendarDate = (value: string) =>
+  dateInputToDate(value).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+const getCalendarDays = (monthDate: Date) => {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingDays = firstDay.getDay();
+  const cellCount = Math.ceil((leadingDays + daysInMonth) / 7) * 7;
+
+  return Array.from({ length: cellCount }, (_, index) => new Date(year, month, index - leadingDays + 1));
+};
+
+const isSameCalendarDay = (date: Date, value: string) => {
+  const selected = dateInputToDate(value);
+  return (
+    date.getFullYear() === selected.getFullYear() &&
+    date.getMonth() === selected.getMonth() &&
+    date.getDate() === selected.getDate()
+  );
+};
+
+const dateFilterOptions: { value: DateFilter; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'week', label: 'This Week' },
+  { value: 'month', label: 'This Month' },
+  { value: 'custom', label: 'Pick a Date' },
+  { value: 'all', label: 'All Time' },
+];
+
+const matchesDateFilter = (timestamp: number, dateFilter: DateFilter, customDate: string) => {
+  if (dateFilter === 'all') return true;
+
+  if (dateFilter === 'custom') {
+    const start = dateInputToTimestamp(customDate);
+    const end = addDays(start, 1);
+    return timestamp >= start && timestamp < end;
+  }
+
+  if (dateFilter === 'yesterday') {
+    const end = startOfDay();
+    const start = addDays(end, -1);
+    return timestamp >= start && timestamp < end;
+  }
+
+  const cutoff = dateFilter === 'today'
+    ? startOfDay()
+    : dateFilter === 'week'
+      ? startOfWeek()
+      : startOfMonth();
+
+  return timestamp >= cutoff;
+};
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBack,
   users,
   menuItems,
   offers,
+  orders,
   salesHistory,
   shifts,
   onSaveUser,
@@ -72,8 +173,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteMenuItem,
   onSaveOffer,
   onDeleteOffer,
+  onCancelOrder,
 }) => {
   const [dateFilter, setDateFilter] = useState<DateFilter>('today');
+  const [customDate, setCustomDate] = useState(() => toDateInputValue());
+  const [calendarMonth, setCalendarMonth] = useState(() => dateInputToDate(toDateInputValue()));
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AdminTab>('reports');
   const [userForm, setUserForm] = useState<AppUser>(blankUser());
   const [menuItemBeingEdited, setMenuItemBeingEdited] = useState<MenuItem | null>(null);
@@ -82,14 +187,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [message, setMessage] = useState('');
 
   const filteredSales = useMemo(() => {
-    if (dateFilter === 'all') return salesHistory;
-    const cutoff = dateFilter === 'today' ? startOfToday() : startOfWeek();
-    return salesHistory.filter((sale) => sale.paidAt >= cutoff);
-  }, [salesHistory, dateFilter]);
+    return salesHistory.filter((sale) => matchesDateFilter(sale.paidAt, dateFilter, customDate));
+  }, [salesHistory, dateFilter, customDate]);
+
+  const filteredOrders = useMemo<AdminOrderRow[]>(() => {
+    const paidRows = salesHistory.map((sale) => ({
+      id: sale.orderId,
+      timestamp: sale.paidAt,
+      cashierId: sale.cashierId,
+      table: sale.table,
+      status: 'paid' as const,
+      paymentMethod: sale.paymentMethod,
+      total: sale.total,
+    }));
+    const pendingRows = orders
+      .filter((order) => order.status === 'pending')
+      .map((order) => ({
+        id: order.id,
+        timestamp: order.timestamp,
+        cashierId: order.cashierId,
+        table: order.table,
+        status: order.status,
+        paymentMethod: order.paymentMethod,
+        total: order.total,
+      }));
+
+    return [...paidRows, ...pendingRows]
+      .filter((order) => matchesDateFilter(order.timestamp, dateFilter, customDate))
+      .sort((a, b) => b.timestamp - a.timestamp);
+  }, [orders, salesHistory, dateFilter, customDate]);
 
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
   const totalOrders = filteredSales.length;
   const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
+  const calendarDays = useMemo(() => getCalendarDays(calendarMonth), [calendarMonth]);
+  const calendarMonthLabel = calendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   const revenueByPaymentMethod = useMemo(() => {
     const totals: Record<PaymentMethod, number> = { cash: 0, card: 0, instapay: 0 };
@@ -99,6 +231,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
     return totals;
   }, [filteredSales]);
+  const electronicRevenue = revenueByPaymentMethod.card + revenueByPaymentMethod.instapay;
 
   const revenueByCashier = useMemo(() => {
     const map = new Map<string, { revenue: number; orders: number }>();
@@ -171,6 +304,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setMessage('Offer saved.');
   };
 
+  const cancelOrder = async (order: AdminOrderRow) => {
+    const confirmed = window.confirm(`Cancel order #${order.id.slice(-6)}? This will remove it from reports if it was paid.`);
+    if (!confirmed) return;
+    await onCancelOrder(order.id);
+    setMessage(`Order #${order.id.slice(-6)} canceled.`);
+  };
+
   return (
     <div className="admin-dashboard">
       <div className="admin-header">
@@ -180,7 +320,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <h2>Admin Dashboard</h2>
         </div>
         <div className="admin-filter-tabs">
-          {(['reports', 'users', 'menu', 'offers'] as AdminTab[]).map((tab) => (
+          {(['reports', 'orders', 'users', 'menu', 'offers'] as AdminTab[]).map((tab) => (
             <button
               key={tab}
               className={`admin-filter-btn ${activeTab === tab ? 'active' : ''}`}
@@ -189,7 +329,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 setMessage('');
               }}
             >
-              {tab === 'reports' ? 'Reports' : tab === 'users' ? 'Cashiers' : tab === 'menu' ? 'Menu' : 'Offers'}
+              {tab === 'reports' ? 'Reports' : tab === 'orders' ? 'Orders' : tab === 'users' ? 'Cashiers' : tab === 'menu' ? 'Menu' : 'Offers'}
             </button>
           ))}
         </div>
@@ -203,24 +343,120 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {message && <span className="admin-message">{message}</span>}
         </div>
 
+        {(activeTab === 'reports' || activeTab === 'orders') && (
+            <div className="admin-date-filter-bar">
+              <div className="admin-filter-tabs">
+                {dateFilterOptions.map((filter) => (
+                  <button
+                    key={filter.value}
+                    className={`admin-filter-btn ${dateFilter === filter.value ? 'active' : ''}`}
+                    onClick={() => {
+                      setDateFilter(filter.value);
+                      setIsCalendarOpen(filter.value === 'custom');
+                    }}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+              <div className="admin-calendar-picker">
+                <button
+                  className={`admin-calendar-trigger ${dateFilter === 'custom' ? 'active' : ''}`}
+                  type="button"
+                  onClick={() => {
+                    setDateFilter('custom');
+                    setCalendarMonth(dateInputToDate(customDate));
+                    setIsCalendarOpen((open) => !open);
+                  }}
+                >
+                  <span>Calendar</span>
+                  <strong>{formatCalendarDate(customDate)}</strong>
+                </button>
+                {isCalendarOpen && (
+                  <div className="admin-calendar-popover">
+                    <div className="admin-calendar-header">
+                      <button
+                        type="button"
+                        aria-label="Previous month"
+                        onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                      >
+                        &lt;
+                      </button>
+                      <strong>{calendarMonthLabel}</strong>
+                      <button
+                        type="button"
+                        aria-label="Next month"
+                        onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                    <div className="admin-calendar-weekdays">
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                        <span key={day}>{day}</span>
+                      ))}
+                    </div>
+                    <div className="admin-calendar-grid">
+                      {calendarDays.map((day) => {
+                        const dateValue = toDateInputValue(day);
+                        const isOutsideMonth = day.getMonth() !== calendarMonth.getMonth();
+                        const isSelected = isSameCalendarDay(day, customDate);
+                        const isToday = isSameCalendarDay(day, toDateInputValue());
+
+                        return (
+                          <button
+                            key={dateValue}
+                            type="button"
+                            className={[
+                              isOutsideMonth ? 'outside' : '',
+                              isSelected ? 'selected' : '',
+                              isToday ? 'today' : '',
+                            ].filter(Boolean).join(' ')}
+                            onClick={() => {
+                              setCustomDate(dateValue);
+                              setDateFilter('custom');
+                              setIsCalendarOpen(false);
+                            }}
+                          >
+                            {day.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+        )}
+
         {activeTab === 'reports' && (
           <>
-            <div className="admin-filter-tabs">
-              {(['today', 'week', 'all'] as DateFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  className={`admin-filter-btn ${dateFilter === filter ? 'active' : ''}`}
-                  onClick={() => setDateFilter(filter)}
-                >
-                  {filter === 'today' ? 'Today' : filter === 'week' ? 'This Week' : 'All Time'}
-                </button>
-              ))}
-            </div>
 
             <div className="admin-stats-grid">
-              <div className="admin-stat-card">
+              <div className="admin-stat-card admin-stat-total">
                 <span className="admin-stat-label">Total Revenue</span>
                 <strong className="admin-stat-value">EGP{totalRevenue.toFixed(2)}</strong>
+                <span className="admin-stat-note">Cash + card + InstaPay</span>
+              </div>
+              <div className="admin-stat-card admin-stat-cash">
+                <span className="admin-stat-label">Cash in Drawer</span>
+                <strong className="admin-stat-value">EGP{revenueByPaymentMethod.cash.toFixed(2)}</strong>
+                <span className="admin-stat-note">Physical cash only</span>
+              </div>
+              <div className="admin-stat-card admin-stat-cardpay">
+                <span className="admin-stat-label">Card Sales</span>
+                <strong className="admin-stat-value">EGP{revenueByPaymentMethod.card.toFixed(2)}</strong>
+                <span className="admin-stat-note">Not in drawer</span>
+              </div>
+              <div className="admin-stat-card admin-stat-instapay">
+                <span className="admin-stat-label">InstaPay Sales</span>
+                <strong className="admin-stat-value">EGP{revenueByPaymentMethod.instapay.toFixed(2)}</strong>
+                <span className="admin-stat-note">Not in drawer</span>
+              </div>
+              <div className="admin-stat-card admin-stat-electronic">
+                <span className="admin-stat-label">Electronic Total</span>
+                <strong className="admin-stat-value">EGP{electronicRevenue.toFixed(2)}</strong>
+                <span className="admin-stat-note">Card + InstaPay</span>
               </div>
               <div className="admin-stat-card">
                 <span className="admin-stat-label">Orders Sold</span>
@@ -241,17 +477,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <thead><tr><th>Cashier</th><th>Orders</th><th>Revenue</th></tr></thead>
                 <tbody>
                   {revenueByCashier.map((row) => (
-                    <tr key={row.cashierId}><td>{row.cashierId}</td><td>{row.orders}</td><td>EGP{row.revenue.toFixed(2)}</td></tr>
+                    <tr key={row.cashierId}><td data-label="Cashier">{row.cashierId}</td><td data-label="Orders">{row.orders}</td><td data-label="Revenue">EGP{row.revenue.toFixed(2)}</td></tr>
                   ))}
                 </tbody>
               </ReportTable>
 
-              <ReportTable title="Sales by Payment Method" empty={totalOrders === 0}>
-                <thead><tr><th>Method</th><th>Revenue</th></tr></thead>
+              <ReportTable title="Drawer vs Electronic Payments" empty={totalOrders === 0}>
+                <thead><tr><th>Method</th><th>Where it goes</th><th>Revenue</th></tr></thead>
                 <tbody>
-                  <tr><td>Cash</td><td>EGP{revenueByPaymentMethod.cash.toFixed(2)}</td></tr>
-                  <tr><td>Card</td><td>EGP{revenueByPaymentMethod.card.toFixed(2)}</td></tr>
-                  <tr><td>InstaPay</td><td>EGP{revenueByPaymentMethod.instapay.toFixed(2)}</td></tr>
+                  <tr><td data-label="Method">Cash</td><td data-label="Where it goes">Drawer</td><td data-label="Revenue">EGP{revenueByPaymentMethod.cash.toFixed(2)}</td></tr>
+                  <tr><td data-label="Method">Card</td><td data-label="Where it goes">Bank/Card terminal</td><td data-label="Revenue">EGP{revenueByPaymentMethod.card.toFixed(2)}</td></tr>
+                  <tr><td data-label="Method">InstaPay</td><td data-label="Where it goes">InstaPay account</td><td data-label="Revenue">EGP{revenueByPaymentMethod.instapay.toFixed(2)}</td></tr>
                 </tbody>
               </ReportTable>
 
@@ -259,7 +495,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <thead><tr><th>Item</th><th>Qty Sold</th><th>Revenue</th></tr></thead>
                 <tbody>
                   {topItems.map((row) => (
-                    <tr key={row.name}><td>{row.name}</td><td>{row.quantity}</td><td>EGP{row.revenue.toFixed(2)}</td></tr>
+                    <tr key={row.name}><td data-label="Item">{row.name}</td><td data-label="Qty Sold">{row.quantity}</td><td data-label="Revenue">EGP{row.revenue.toFixed(2)}</td></tr>
                   ))}
                 </tbody>
               </ReportTable>
@@ -274,9 +510,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   const nonCashSales = (shift.cardSales ?? 0) + (shift.instapaySales ?? 0);
                   return (
                     <tr key={`${shift.cashierId}-${shift.shiftEnd}-${index}`}>
-                      <td>{shift.cashierId}</td><td>{shift.date}</td><td>EGP{(shift.cashSales ?? shift.totalSales).toFixed(2)}</td>
-                      <td>EGP{nonCashSales.toFixed(2)}</td><td>EGP{shift.totalSales.toFixed(2)}</td><td>EGP{shift.expectedDrawer.toFixed(2)}</td><td>EGP{shift.finalDrawer.toFixed(2)}</td>
-                      <td className={shift.difference === 0 ? '' : shift.difference > 0 ? 'admin-diff-positive' : 'admin-diff-negative'}>
+                      <td data-label="Cashier">{shift.cashierId}</td><td data-label="Date">{shift.date}</td><td data-label="Cash Sales">EGP{(shift.cashSales ?? shift.totalSales).toFixed(2)}</td>
+                      <td data-label="Card / InstaPay">EGP{nonCashSales.toFixed(2)}</td><td data-label="Total Sales">EGP{shift.totalSales.toFixed(2)}</td><td data-label="Expected Drawer">EGP{shift.expectedDrawer.toFixed(2)}</td><td data-label="Final Drawer">EGP{shift.finalDrawer.toFixed(2)}</td>
+                      <td data-label="Difference" className={shift.difference === 0 ? '' : shift.difference > 0 ? 'admin-diff-positive' : 'admin-diff-negative'}>
                         {shift.difference > 0 ? '+' : ''}EGP{shift.difference.toFixed(2)}
                       </td>
                     </tr>
@@ -285,6 +521,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </tbody>
             </ReportTable>
           </>
+        )}
+
+        {activeTab === 'orders' && (
+          <ReportTable title="Orders by Day" empty={filteredOrders.length === 0}>
+            <thead>
+              <tr><th>Order</th><th>Date</th><th>Cashier</th><th>Table</th><th>Status</th><th>Payment</th><th>Total</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {filteredOrders.map((order) => (
+                <tr key={order.id}>
+                  <td data-label="Order">#{order.id.slice(-6)}</td>
+                  <td data-label="Date">{new Date(order.timestamp).toLocaleString()}</td>
+                  <td data-label="Cashier">{order.cashierId || 'Unknown'}</td>
+                  <td data-label="Table">{order.table === 'to-go' ? 'To Go' : order.table ? `Table ${order.table}` : '-'}</td>
+                  <td data-label="Status">{order.status === 'paid' ? 'Paid' : 'Pending'}</td>
+                  <td data-label="Payment">{order.paymentMethod || '-'}</td>
+                  <td data-label="Total">EGP{order.total.toFixed(2)}</td>
+                  <td data-label="Actions">
+                    <button className="admin-filter-btn admin-danger-btn" onClick={() => cancelOrder(order)}>
+                      Cancel Order
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </ReportTable>
         )}
 
         {activeTab === 'users' && (
@@ -313,8 +575,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <tbody>
                 {users.map((user) => (
                   <tr key={user.id}>
-                    <td>{user.username}</td><td>{user.role}</td><td>{user.active ? 'Active' : 'Disabled'}</td>
-                    <td>
+                    <td data-label="Username">{user.username}</td><td data-label="Role">{user.role}</td><td data-label="Status">{user.active ? 'Active' : 'Disabled'}</td>
+                    <td data-label="Actions">
                       <button className="admin-filter-btn" onClick={() => setUserForm(user)}>Edit</button>
                       <button className="admin-filter-btn" onClick={() => onDeleteUser(user.id)}>Delete</button>
                     </td>
@@ -347,8 +609,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <tbody>
                 {filteredMenuItems.map((item) => (
                   <tr key={item.id}>
-                    <td>{item.name}</td><td>{item.category}</td><td>EGP{item.price.toFixed(2)}</td><td>{item.available === false ? 'Out of stock' : 'Available'}</td>
-                    <td>
+                    <td data-label="Item">{item.name}</td><td data-label="Category">{item.category}</td><td data-label="Price">EGP{item.price.toFixed(2)}</td><td data-label="Status">{item.available === false ? 'Out of stock' : 'Available'}</td>
+                    <td data-label="Actions">
                       <button className="admin-filter-btn" onClick={() => setMenuItemBeingEdited(item)}>Edit</button>
                       <button className="admin-filter-btn" onClick={() => onDeleteMenuItem(item.id)}>Delete</button>
                     </td>
@@ -390,8 +652,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <tbody>
                 {offers.map((offer) => (
                   <tr key={offer.id}>
-                    <td>{offer.title}</td><td>{menuItems.find((item) => item.id === offer.menuItemId)?.name || offer.menuItemId}</td><td>{offer.discountPercent}%</td><td>{offer.active ? 'Active' : 'Off'}</td>
-                    <td>
+                    <td data-label="Offer">{offer.title}</td><td data-label="Item">{menuItems.find((item) => item.id === offer.menuItemId)?.name || offer.menuItemId}</td><td data-label="Discount">{offer.discountPercent}%</td><td data-label="Status">{offer.active ? 'Active' : 'Off'}</td>
+                    <td data-label="Actions">
                       <button className="admin-filter-btn" onClick={() => setOfferForm(offer)}>Edit</button>
                       <button className="admin-filter-btn" onClick={() => onDeleteOffer(offer.id)}>Delete</button>
                     </td>

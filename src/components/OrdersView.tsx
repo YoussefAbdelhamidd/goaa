@@ -205,6 +205,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                     </button>
                   </div>
                 )}
+
               </div>
             ))}
           </div>
@@ -253,6 +254,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({
           </div>
         </div>
       )}
+
     </div>
   );
 };

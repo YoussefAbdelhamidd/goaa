@@ -220,6 +220,15 @@ export const posBackend = {
     return order;
   },
 
+  async deleteOrder(id: string) {
+    if (!supabase) {
+      writeLocal('cafeOrders', readLocal<Order[]>('cafeOrders', []).filter((order) => order.id !== id));
+      return;
+    }
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (error) throw error;
+  },
+
   async clearOrders() {
     if (!supabase) {
       localStorage.removeItem('cafeOrders');
@@ -244,6 +253,18 @@ export const posBackend = {
       paid_at_ms: sale.paidAt,
       payment_method: sale.paymentMethod,
     });
+    if (error) throw error;
+  },
+
+  async deleteSaleByOrderId(orderId: string) {
+    if (!supabase) {
+      writeLocal(
+        'cafeSalesHistory',
+        readLocal<SaleRecord[]>('cafeSalesHistory', []).filter((sale) => sale.orderId !== orderId)
+      );
+      return;
+    }
+    const { error } = await supabase.from('sales').delete().eq('order_id', orderId);
     if (error) throw error;
   },
 
