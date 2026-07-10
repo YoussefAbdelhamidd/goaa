@@ -21,6 +21,11 @@ const assertSupabase = () => {
   return supabase;
 };
 
+const isMissingTaxColumnError = (error: { message?: string; details?: string; code?: string }) => {
+  const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+  return error.code === 'PGRST204' || text.includes('subtotal') || text.includes('tax_applied') || text.includes('tax_rate') || text.includes('tax_amount');
+};
+
 export const backendMode = isSupabaseConfigured ? 'supabase' : 'local';
 
 export const posBackend = {
@@ -180,21 +185,36 @@ export const posBackend = {
 
   async getOrders() {
     if (!supabase) return readLocal<Order[]>('cafeOrders', []);
-    const { data, error } = await supabase
-      .from('orders')
-      .select('id, items, total, timestamp_ms, status, table_label, cashier_id, payment_method')
-      .order('timestamp_ms', { ascending: false });
-    if (error) throw error;
-    return (data || []).map((order) => ({
+    const mapOrder = (order: any) => ({
       id: order.id,
       items: order.items,
       total: Number(order.total),
+      subtotal: order.subtotal === null || order.subtotal === undefined ? undefined : Number(order.subtotal),
+      taxApplied: order.tax_applied ?? false,
+      taxRate: order.tax_rate === null || order.tax_rate === undefined ? undefined : Number(order.tax_rate),
+      taxAmount: order.tax_amount === null || order.tax_amount === undefined ? undefined : Number(order.tax_amount),
       timestamp: Number(order.timestamp_ms),
       status: order.status,
       table: tableValueFromDb(order.table_label),
       cashierId: order.cashier_id,
       paymentMethod: order.payment_method,
-    })) as Order[];
+    });
+    const result = await supabase
+      .from('orders')
+      .select('id, items, total, subtotal, tax_applied, tax_rate, tax_amount, timestamp_ms, status, table_label, cashier_id, payment_method')
+      .order('timestamp_ms', { ascending: false });
+    let data: any[] | null = result.data;
+    let error = result.error;
+    if (error && isMissingTaxColumnError(error)) {
+      const fallback = await supabase
+        .from('orders')
+        .select('id, items, total, timestamp_ms, status, table_label, cashier_id, payment_method')
+        .order('timestamp_ms', { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    return (data || []).map(mapOrder) as Order[];
   },
 
   async saveOrder(order: Order) {
@@ -206,7 +226,7 @@ export const posBackend = {
       writeLocal('cafeOrders', next);
       return order;
     }
-    const { error } = await supabase.from('orders').upsert({
+    const baseOrderRow = {
       id: order.id,
       items: order.items,
       total: order.total,
@@ -215,7 +235,18 @@ export const posBackend = {
       table_label: tableValueToDb(order.table),
       cashier_id: order.cashierId,
       payment_method: order.paymentMethod ?? null,
+    };
+    let { error } = await supabase.from('orders').upsert({
+      ...baseOrderRow,
+      subtotal: order.subtotal ?? null,
+      tax_applied: order.taxApplied ?? false,
+      tax_rate: order.taxRate ?? 0,
+      tax_amount: order.taxAmount ?? 0,
     }, { onConflict: 'id' });
+    if (error && isMissingTaxColumnError(error)) {
+      const fallback = await supabase.from('orders').upsert(baseOrderRow, { onConflict: 'id' });
+      error = fallback.error;
+    }
     if (error) throw error;
     return order;
   },
@@ -244,7 +275,7 @@ export const posBackend = {
       writeLocal('cafeSalesHistory', [...salesHistory, sale]);
       return;
     }
-    const { error } = await supabase.from('sales').insert({
+    const baseSaleRow = {
       order_id: sale.orderId,
       cashier_id: sale.cashierId,
       table_label: tableValueToDb(sale.table),
@@ -252,7 +283,34 @@ export const posBackend = {
       total: sale.total,
       paid_at_ms: sale.paidAt,
       payment_method: sale.paymentMethod,
+    };
+    let { error } = await supabase.from('sales').insert({
+      ...baseSaleRow,
+      subtotal: sale.subtotal ?? null,
+      tax_applied: sale.taxApplied ?? false,
+      tax_rate: sale.taxRate ?? 0,
+      tax_amount: sale.taxAmount ?? 0,
     });
+    if (error && isMissingTaxColumnError(error)) {
+      const fallback = await supabase.from('sales').insert(baseSaleRow);
+      error = fallback.error;
+    }
+    if (error) throw error;
+  },
+
+  async updateSalePaymentMethod(orderId: string, paymentMethod: SaleRecord['paymentMethod']) {
+    if (!supabase) {
+      const salesHistory = readLocal<SaleRecord[]>('cafeSalesHistory', []);
+      writeLocal(
+        'cafeSalesHistory',
+        salesHistory.map((sale) => (sale.orderId === orderId ? { ...sale, paymentMethod } : sale))
+      );
+      return;
+    }
+    const { error } = await supabase
+      .from('sales')
+      .update({ payment_method: paymentMethod })
+      .eq('order_id', orderId);
     if (error) throw error;
   },
 
@@ -270,20 +328,35 @@ export const posBackend = {
 
   async getSales() {
     if (!supabase) return readLocal<SaleRecord[]>('cafeSalesHistory', []);
-    const { data, error } = await supabase
-      .from('sales')
-      .select('order_id, cashier_id, table_label, items, total, paid_at_ms, payment_method')
-      .order('paid_at_ms', { ascending: false });
-    if (error) throw error;
-    return (data || []).map((sale) => ({
+    const mapSale = (sale: any) => ({
       orderId: sale.order_id,
       cashierId: sale.cashier_id,
       table: tableValueFromDb(sale.table_label),
       items: sale.items,
       total: Number(sale.total),
+      subtotal: sale.subtotal === null || sale.subtotal === undefined ? undefined : Number(sale.subtotal),
+      taxApplied: sale.tax_applied ?? false,
+      taxRate: sale.tax_rate === null || sale.tax_rate === undefined ? undefined : Number(sale.tax_rate),
+      taxAmount: sale.tax_amount === null || sale.tax_amount === undefined ? undefined : Number(sale.tax_amount),
       paidAt: Number(sale.paid_at_ms),
       paymentMethod: sale.payment_method,
-    })) as SaleRecord[];
+    });
+    const result = await supabase
+      .from('sales')
+      .select('order_id, cashier_id, table_label, items, total, subtotal, tax_applied, tax_rate, tax_amount, paid_at_ms, payment_method')
+      .order('paid_at_ms', { ascending: false });
+    let data: any[] | null = result.data;
+    let error = result.error;
+    if (error && isMissingTaxColumnError(error)) {
+      const fallback = await supabase
+        .from('sales')
+        .select('order_id, cashier_id, table_label, items, total, paid_at_ms, payment_method')
+        .order('paid_at_ms', { ascending: false });
+      data = fallback.data;
+      error = fallback.error;
+    }
+    if (error) throw error;
+    return (data || []).map(mapSale) as SaleRecord[];
   },
 
   async recordShift(shift: ShiftRecord) {

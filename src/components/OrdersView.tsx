@@ -18,6 +18,10 @@ interface Order {
   id: string;
   items: CartItem[];
   total: number;
+  subtotal?: number;
+  taxApplied?: boolean;
+  taxRate?: number;
+  taxAmount?: number;
   timestamp: number;
   status: 'pending' | 'paid';
   table?: number | 'to-go';
@@ -26,7 +30,8 @@ interface Order {
 
 interface OrdersViewProps {
   orders: Order[];
-  onPayOrder: (orderId: string, paymentMethod: PaymentMethod) => void;
+  onPayOrder: (orderId: string, paymentMethod: PaymentMethod, taxApplied: boolean) => void;
+  onChangePaymentMethod: (orderId: string, paymentMethod: PaymentMethod) => void;
   onBack: () => void;
   onAddItems: (orderId: string) => void;
   onLogout: () => void;
@@ -42,9 +47,13 @@ interface OrdersViewProps {
     pending: string;
     paid: string;
     pay: string;
+    changePaymentMethod: string;
     noOrders: string;
     noOrdersForFilter: string;
     total: string;
+    subtotal: string;
+    tax: string;
+    includeTax: string;
     table: string;
     toGo: string;
     addItems: string;
@@ -54,6 +63,7 @@ interface OrdersViewProps {
     cancel: string;
     logout: string;
     selectPaymentMethod: string;
+    updatePaymentMethod: string;
     confirmPayment: string;
     cash: string;
     card: string;
@@ -62,10 +72,14 @@ interface OrdersViewProps {
 }
 
 const PAYMENT_METHODS: PaymentMethod[] = ['cash', 'card', 'instapay'];
+const TAX_RATE = 0.14;
+
+const roundMoney = (amount: number) => Math.round(amount * 100) / 100;
 
 const OrdersView: React.FC<OrdersViewProps> = ({
   orders,
   onPayOrder,
+  onChangePaymentMethod,
   onBack,
   onAddItems,
   onLogout,
@@ -76,7 +90,9 @@ const OrdersView: React.FC<OrdersViewProps> = ({
 }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'paid'>('all');
   const [orderPendingPayment, setOrderPendingPayment] = useState<Order | null>(null);
+  const [paymentMode, setPaymentMode] = useState<'pay' | 'change'>('pay');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('cash');
+  const [applyTax, setApplyTax] = useState(false);
 
   const filteredOrders = useMemo(() => {
     const sorted = [...orders].sort((a, b) => b.timestamp - a.timestamp);
@@ -89,19 +105,28 @@ const OrdersView: React.FC<OrdersViewProps> = ({
 
   const openPaymentModal = (order: Order) => {
     setOrderPendingPayment(order);
-    setSelectedMethod('cash');
+    setPaymentMode(order.status === 'paid' ? 'change' : 'pay');
+    setSelectedMethod(order.paymentMethod || 'cash');
+    setApplyTax(order.taxApplied ?? false);
   };
 
   const closePaymentModal = () => setOrderPendingPayment(null);
 
   const confirmPayment = () => {
     if (!orderPendingPayment) return;
-    onPayOrder(orderPendingPayment.id, selectedMethod);
+    if (paymentMode === 'change') {
+      onChangePaymentMethod(orderPendingPayment.id, selectedMethod);
+    } else {
+      onPayOrder(orderPendingPayment.id, selectedMethod, applyTax);
+    }
     setOrderPendingPayment(null);
   };
 
   const paymentMethodLabel = (method: PaymentMethod) =>
     method === 'cash' ? translations.cash : method === 'card' ? translations.card : translations.instapay;
+  const paymentSubtotal = orderPendingPayment?.subtotal ?? orderPendingPayment?.total ?? 0;
+  const paymentTaxAmount = paymentMode === 'pay' && applyTax ? roundMoney(paymentSubtotal * TAX_RATE) : 0;
+  const paymentTotal = roundMoney(paymentSubtotal + paymentTaxAmount);
 
   return (
     <div className="cashier-view">
@@ -206,6 +231,17 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                   </div>
                 )}
 
+                {order.status === 'paid' && (
+                  <div className="order-actions">
+                    <button
+                      onClick={() => openPaymentModal(order)}
+                      className="add-items-btn"
+                    >
+                      {translations.changePaymentMethod}
+                    </button>
+                  </div>
+                )}
+
               </div>
             ))}
           </div>
@@ -227,9 +263,23 @@ const OrdersView: React.FC<OrdersViewProps> = ({
       {orderPendingPayment && (
         <div className="modal-overlay" onClick={closePaymentModal}>
           <div className="modal-content payment-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{translations.selectPaymentMethod}</h3>
+            <h3>{paymentMode === 'change' ? translations.updatePaymentMethod : translations.selectPaymentMethod}</h3>
             <div className="order-total payment-modal-total">
-              <strong>{translations.total}: EGP{orderPendingPayment.total.toFixed(2)}</strong>
+              {paymentMode === 'pay' && (
+                <>
+                  <span>{translations.subtotal}: EGP{paymentSubtotal.toFixed(2)}</span>
+                  <label className="tax-toggle">
+                    <input
+                      type="checkbox"
+                      checked={applyTax}
+                      onChange={(e) => setApplyTax(e.target.checked)}
+                    />
+                    {translations.includeTax}
+                  </label>
+                  <span>{translations.tax}: EGP{paymentTaxAmount.toFixed(2)}</span>
+                </>
+              )}
+              <strong>{translations.total}: EGP{(paymentMode === 'pay' ? paymentTotal : orderPendingPayment.total).toFixed(2)}</strong>
             </div>
             <div className="pill-group payment-method-group">
               {PAYMENT_METHODS.map((method) => (
@@ -248,7 +298,7 @@ const OrdersView: React.FC<OrdersViewProps> = ({
                 {translations.cancel}
               </button>
               <button className="confirm-btn" type="button" onClick={confirmPayment}>
-                {translations.confirmPayment}
+                {paymentMode === 'change' ? translations.updatePaymentMethod : translations.confirmPayment}
               </button>
             </div>
           </div>

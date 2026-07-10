@@ -17,6 +17,8 @@ const DEFAULT_USERS: AppUser[] = [
 
 // Orders paid before payment methods were tracked are treated as cash for drawer math
 const isCashPayment = (order: Order) => !order.paymentMethod || order.paymentMethod === 'cash';
+const TAX_RATE = 0.14;
+const roundMoney = (amount: number) => Math.round(amount * 100) / 100;
 
 const DEFAULT_MENU_ITEMS: MenuItem[] = [
   // Hot Drinks
@@ -137,10 +139,14 @@ const translations = {
     pending: 'Pending',
     paid: 'Paid',
     pay: 'Pay',
+    changePaymentMethod: 'Change Payment',
     noOrders: 'No orders found',
     noOrdersForFilter: 'No orders in this status',
     table: 'Table',
     toGo: 'To Go',
+    subtotal: 'Subtotal',
+    tax: 'Tax',
+    includeTax: 'Add 14% Tax',
     selectTable: 'Select Table',
     selectOption: 'Select Option',
     addItems: 'Add Items',
@@ -169,6 +175,7 @@ const translations = {
     expectedDrawer: 'Expected Drawer (Cash)',
     difference: 'Difference',
     selectPaymentMethod: 'Select Payment Method',
+    updatePaymentMethod: 'Update Payment Method',
     confirmPayment: 'Confirm Payment',
     cash: 'Cash',
     card: 'Card',
@@ -296,10 +303,14 @@ const translations = {
     pending: 'في الانتظار',
     paid: 'مدفوع',
     pay: 'دفع',
+    changePaymentMethod: 'تغيير الدفع',
     noOrders: 'لا توجد طلبات',
     noOrdersForFilter: 'لا توجد طلبات بهذه الحالة',
     table: 'الطاولة',
     toGo: 'سفري',
+    subtotal: 'المجموع الفرعي',
+    tax: 'الضريبة',
+    includeTax: 'إضافة ضريبة 14%',
     selectTable: 'اختر الطاولة',
     selectOption: 'اختر الخيار',
     addItems: 'إضافة عناصر',
@@ -324,6 +335,7 @@ const translations = {
     shiftEnd: 'نهاية الوردية',
     initialAmount: 'المبلغ الأولي',
     selectPaymentMethod: 'اختر طريقة الدفع',
+    updatePaymentMethod: 'تحديث طريقة الدفع',
     confirmPayment: 'تأكيد الدفع',
     cash: 'نقدي',
     card: 'بطاقة',
@@ -921,6 +933,10 @@ function App() {
       table: order.table,
       items: order.items,
       total: order.total,
+      subtotal: order.subtotal,
+      taxApplied: order.taxApplied,
+      taxRate: order.taxRate,
+      taxAmount: order.taxAmount,
       paidAt: Date.now(),
       paymentMethod: order.paymentMethod || 'cash',
     };
@@ -928,23 +944,57 @@ function App() {
     setSalesHistory((prev) => [...prev, saleRecord]);
   };
 
-  const payOrder = async (orderId: string, paymentMethod: PaymentMethod) => {
+  const payOrder = async (orderId: string, paymentMethod: PaymentMethod, taxApplied: boolean) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const subtotal = order.subtotal ?? order.total;
+    const taxAmount = taxApplied ? roundMoney(subtotal * TAX_RATE) : 0;
+    const paidOrder: Order = {
+      ...order,
+      status: 'paid',
+      paymentMethod,
+      subtotal,
+      taxApplied,
+      taxRate: taxApplied ? TAX_RATE : 0,
+      taxAmount,
+      total: roundMoney(subtotal + taxAmount),
+    };
+
     const updatedOrders = orders.map(order =>
-      order.id === orderId ? { ...order, status: 'paid' as const, paymentMethod } : order
+      order.id === orderId ? paidOrder : order
     );
     setOrders(updatedOrders);
-    const updatedOrder = updatedOrders.find((order) => order.id === orderId);
-    if (updatedOrder) await posBackend.saveOrder(updatedOrder);
+    await posBackend.saveOrder(paidOrder);
 
-    const order = orders.find(o => o.id === orderId);
-    if (order) {
-      const paidOrder = { ...order, paymentMethod };
-      // Only cash actually lands in the physical drawer; card/InstaPay settle elsewhere
-      if (paymentMethod === 'cash') {
-        setDrawerAmount(prev => prev + order.total);
-      }
-      await recordSale(paidOrder);
-      printReceipt(paidOrder);
+    // Only cash actually lands in the physical drawer; card/InstaPay settle elsewhere
+    if (paymentMethod === 'cash') {
+      setDrawerAmount(prev => prev + paidOrder.total);
+    }
+    await recordSale(paidOrder);
+    printReceipt(paidOrder);
+  };
+
+  const changePaymentMethod = async (orderId: string, paymentMethod: PaymentMethod) => {
+    const order = orders.find((item) => item.id === orderId);
+    if (!order || order.status !== 'paid') return;
+
+    const previousMethod = order.paymentMethod || 'cash';
+    if (previousMethod === paymentMethod) return;
+
+    const updatedOrder = { ...order, paymentMethod };
+    setOrders((prev) => prev.map((item) => (item.id === orderId ? updatedOrder : item)));
+    setSalesHistory((prev) =>
+      prev.map((sale) => (sale.orderId === orderId ? { ...sale, paymentMethod } : sale))
+    );
+
+    await posBackend.saveOrder(updatedOrder);
+    await posBackend.updateSalePaymentMethod(orderId, paymentMethod);
+
+    if (previousMethod === 'cash' && paymentMethod !== 'cash') {
+      setDrawerAmount((prev) => Math.max(initialDrawerAmount, prev - order.total));
+    } else if (previousMethod !== 'cash' && paymentMethod === 'cash') {
+      setDrawerAmount((prev) => prev + order.total);
     }
   };
 
@@ -1013,6 +1063,16 @@ function App() {
                 </div>
               `).join('')}
               <div class="total">
+                ${order.taxApplied ? `
+                  <div class="item">
+                    <span>${t.subtotal}</span>
+                    <span>EGP${(order.subtotal ?? order.total - (order.taxAmount ?? 0)).toFixed(2)}</span>
+                  </div>
+                  <div class="item">
+                    <span>${t.tax} 14%</span>
+                    <span>EGP${(order.taxAmount ?? 0).toFixed(2)}</span>
+                  </div>
+                ` : ''}
                 <div class="item">
                   <span>${t.total}</span>
                   <span>EGP${order.total.toFixed(2)}</span>
@@ -1192,6 +1252,7 @@ function App() {
           <OrdersView
             orders={orders}
             onPayOrder={payOrder}
+            onChangePaymentMethod={changePaymentMethod}
             onBack={() => setShowOrders(false)}
             onAddItems={addItemsToOrder}
             onLogout={handleLogout}

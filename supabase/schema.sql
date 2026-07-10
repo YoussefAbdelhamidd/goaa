@@ -32,6 +32,10 @@ create table if not exists public.orders (
   id text primary key,
   items jsonb not null default '[]'::jsonb,
   total numeric(10, 2) not null check (total >= 0),
+  subtotal numeric(10, 2) check (subtotal >= 0),
+  tax_applied boolean not null default false,
+  tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0),
+  tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0),
   timestamp_ms bigint not null,
   status text not null check (status in ('pending', 'paid')),
   table_label text,
@@ -47,10 +51,24 @@ create table if not exists public.sales (
   table_label text,
   items jsonb not null default '[]'::jsonb,
   total numeric(10, 2) not null check (total >= 0),
+  subtotal numeric(10, 2) check (subtotal >= 0),
+  tax_applied boolean not null default false,
+  tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0),
+  tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0),
   paid_at_ms bigint not null,
   payment_method text not null check (payment_method in ('cash', 'card', 'instapay')),
   created_at timestamptz not null default now()
 );
+
+alter table public.orders add column if not exists subtotal numeric(10, 2) check (subtotal >= 0);
+alter table public.orders add column if not exists tax_applied boolean not null default false;
+alter table public.orders add column if not exists tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0);
+alter table public.orders add column if not exists tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0);
+
+alter table public.sales add column if not exists subtotal numeric(10, 2) check (subtotal >= 0);
+alter table public.sales add column if not exists tax_applied boolean not null default false;
+alter table public.sales add column if not exists tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0);
+alter table public.sales add column if not exists tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0);
 
 create table if not exists public.shifts (
   id uuid primary key default gen_random_uuid(),

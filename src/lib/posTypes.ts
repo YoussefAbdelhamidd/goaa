@@ -28,6 +28,10 @@ export interface Order {
   id: string;
   items: CartItem[];
   total: number;
+  subtotal?: number;
+  taxApplied?: boolean;
+  taxRate?: number;
+  taxAmount?: number;
   timestamp: number;
   status: 'pending' | 'paid';
   table?: number | 'to-go';
@@ -41,6 +45,10 @@ export interface SaleRecord {
   table?: number | 'to-go';
   items: CartItem[];
   total: number;
+  subtotal?: number;
+  taxApplied?: boolean;
+  taxRate?: number;
+  taxAmount?: number;
   paidAt: number;
   paymentMethod: PaymentMethod;
 }
