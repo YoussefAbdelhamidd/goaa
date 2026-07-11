@@ -43,6 +43,7 @@ const blankMenuItem = (items: MenuItem[]): MenuItem => ({
   id: Math.max(0, ...items.map((item) => item.id)) + 1,
   name: '',
   price: 0,
+  specialPrice: 0,
   image: '',
   category: 'HotDrinks',
   available: true,
@@ -273,7 +274,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return menuItems.filter((item) =>
       item.name.toLowerCase().includes(query) ||
       item.category.toLowerCase().includes(query) ||
-      String(item.price).includes(query)
+      String(item.price).includes(query) ||
+      String(item.specialPrice ?? item.price).includes(query)
     );
   }, [menuItems, menuSearch]);
 
@@ -291,6 +293,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ...menuItemBeingEdited,
       name: menuItemBeingEdited.name.trim(),
       category: menuItemBeingEdited.category.trim(),
+      specialPrice: menuItemBeingEdited.specialPrice ?? menuItemBeingEdited.price,
     });
     const wasNewItem = !menuItems.some((item) => item.id === menuItemBeingEdited.id);
     setMenuItemBeingEdited(null);
@@ -605,20 +608,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </button>
             </div>
             <AdminTable>
-              <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Item</th><th>Category</th><th>Regular Price</th><th>Special Price</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
                 {filteredMenuItems.map((item) => (
                   <tr key={item.id}>
-                    <td data-label="Item">{item.name}</td><td data-label="Category">{item.category}</td><td data-label="Price">EGP{item.price.toFixed(2)}</td><td data-label="Status">{item.available === false ? 'Out of stock' : 'Available'}</td>
+                    <td data-label="Item">{item.name}</td><td data-label="Category">{item.category}</td><td data-label="Regular Price">EGP{item.price.toFixed(2)}</td><td data-label="Special Price">EGP{(item.specialPrice ?? item.price).toFixed(2)}</td><td data-label="Status">{item.available === false ? 'Out of stock' : 'Available'}</td>
                     <td data-label="Actions">
-                      <button className="admin-filter-btn" onClick={() => setMenuItemBeingEdited(item)}>Edit</button>
+                      <button className="admin-filter-btn" onClick={() => setMenuItemBeingEdited({ ...item, specialPrice: item.specialPrice ?? item.price })}>Edit</button>
                       <button className="admin-filter-btn" onClick={() => onDeleteMenuItem(item.id)}>Delete</button>
                     </td>
                   </tr>
                 ))}
                 {filteredMenuItems.length === 0 && (
                   <tr>
-                    <td colSpan={5}>No menu items match your search.</td>
+                    <td colSpan={6}>No menu items match your search.</td>
                   </tr>
                 )}
               </tbody>
@@ -681,13 +684,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 />
               </div>
               <div className="admin-field">
-                <label>Price</label>
+                <label>Regular price</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={menuItemBeingEdited.price}
                   onChange={(e) => setMenuItemBeingEdited({ ...menuItemBeingEdited, price: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div className="admin-field">
+                <label>Special price</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={menuItemBeingEdited.specialPrice ?? menuItemBeingEdited.price}
+                  onChange={(e) => setMenuItemBeingEdited({ ...menuItemBeingEdited, specialPrice: Number(e.target.value) })}
                   required
                 />
               </div>

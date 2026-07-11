@@ -12,6 +12,7 @@ export interface MenuItem {
   id: number;
   name: string;
   price: number;
+  specialPrice?: number;
   image: string;
   category: string;
   available?: boolean;

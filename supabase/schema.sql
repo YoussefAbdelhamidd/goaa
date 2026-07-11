@@ -13,6 +13,7 @@ create table if not exists public.menu_items (
   id integer primary key,
   name text not null,
   price numeric(10, 2) not null check (price >= 0),
+  special_price numeric(10, 2) check (special_price >= 0),
   image text not null default '',
   category text not null,
   available boolean not null default true,
@@ -69,6 +70,8 @@ alter table public.sales add column if not exists subtotal numeric(10, 2) check 
 alter table public.sales add column if not exists tax_applied boolean not null default false;
 alter table public.sales add column if not exists tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0);
 alter table public.sales add column if not exists tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0);
+
+alter table public.menu_items add column if not exists special_price numeric(10, 2) check (special_price >= 0);
 
 create table if not exists public.shifts (
   id uuid primary key default gen_random_uuid(),

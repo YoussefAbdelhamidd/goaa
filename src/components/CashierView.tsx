@@ -1,19 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import logo from '../assets/Main logo.png';
-
-interface MenuItem {
-  id: number;
-  name: string;
-  price: number;
-  image: string;
-  category: string;
-  available?: boolean;
-}
-
-interface CartItem extends MenuItem {
-  quantity: number;
-  extras?: string[];
-}
+import type { CartItem, MenuItem } from '../lib/posTypes';
 
 interface CashierViewProps {
   menuItems: MenuItem[];
@@ -28,6 +15,8 @@ interface CashierViewProps {
   translations: {
     cart: string;
     menu: string;
+    regularMenu: string;
+    specialMenu: string;
     total: string;
     checkout: string;
     remove: string;
@@ -68,16 +57,25 @@ const CashierView: React.FC<CashierViewProps> = ({
   isEditingOrder,
   translations,
 }) => {
+  const [activeMenuMode, setActiveMenuMode] = useState<'regular' | 'special'>('regular');
+  const pricedMenuItems = useMemo(
+    () => menuItems.map((item) => ({
+      ...item,
+      price: activeMenuMode === 'special' ? item.specialPrice ?? item.price : item.price,
+    })),
+    [activeMenuMode, menuItems]
+  );
+
   // Group menu items by category
-  const groupedItems = menuItems.reduce((acc, item) => {
+  const groupedItems = useMemo(() => pricedMenuItems.reduce((acc, item) => {
     if (!acc[item.category]) {
       acc[item.category] = [];
     }
     acc[item.category].push(item);
     return acc;
-  }, {} as Record<string, MenuItem[]>);
+  }, {} as Record<string, MenuItem[]>), [pricedMenuItems]);
 
-  const categories = Object.keys(groupedItems);
+  const categories = useMemo(() => Object.keys(groupedItems), [groupedItems]);
 
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [selectedQuantity, setSelectedQuantity] = useState(1);
@@ -117,7 +115,7 @@ const CashierView: React.FC<CashierViewProps> = ({
     updateActiveCategory();
     container.addEventListener('scroll', updateActiveCategory, { passive: true });
     return () => container.removeEventListener('scroll', updateActiveCategory);
-  }, [menuItems]);
+  }, [categories]);
 
   // Keep the active tab scrolled into view within the horizontal tab bar
   useEffect(() => {
@@ -209,7 +207,7 @@ const CashierView: React.FC<CashierViewProps> = ({
           <div className="cart-items">
             {cart.map((item) => (
               <div
-                key={`${item.id}-${item.extras?.join('_') || ''}`}
+                key={`${item.id}-${item.price}-${item.extras?.join('_') || ''}`}
                 className="cart-item"
               >
                 <img src={item.image} alt={item.name} className="cart-item-image" />
@@ -343,7 +341,27 @@ const CashierView: React.FC<CashierViewProps> = ({
             <span>Current menu</span>
             <h2>{translations.menu}</h2>
           </div>
-          <strong>{menuItems.length} items</strong>
+          <strong>{pricedMenuItems.length} items</strong>
+        </div>
+        <div className="menu-mode-tabs" role="tablist" aria-label="Menu price mode">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMenuMode === 'regular'}
+            className={`menu-mode-tab ${activeMenuMode === 'regular' ? 'active' : ''}`}
+            onClick={() => setActiveMenuMode('regular')}
+          >
+            {translations.regularMenu}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeMenuMode === 'special'}
+            className={`menu-mode-tab ${activeMenuMode === 'special' ? 'active' : ''}`}
+            onClick={() => setActiveMenuMode('special')}
+          >
+            {translations.specialMenu}
+          </button>
         </div>
         <div className="category-buttons" ref={categoryButtonsRowRef}>
           {categories.map((category) => (

@@ -126,6 +126,8 @@ const translations = {
     initialDrawer: 'Initial Drawer Amount (EGP)',
     cart: 'Cart',
     menu: 'Menu',
+    regularMenu: 'Regular Menu',
+    specialMenu: 'Special Menu',
     total: 'Total',
     checkout: 'Checkout',
     remove: 'Remove',
@@ -290,6 +292,8 @@ const translations = {
     initialDrawer: 'مبلغ الدرج الأولي (EGP)',
     cart: 'السلة',
     menu: 'القائمة',
+    regularMenu: 'القائمة العادية',
+    specialMenu: 'القائمة الخاصة',
     total: 'المجموع',
     checkout: 'الدفع',
     remove: 'إزالة',
@@ -1155,6 +1159,7 @@ function App() {
         ...item,
         name: activeOffer ? `${translatedName} (${activeOffer.title})` : translatedName,
         price: Math.max(0, Number(offerPrice.toFixed(2))),
+        specialPrice: item.specialPrice ?? item.price,
       };
     });
 
@@ -1169,7 +1174,7 @@ function App() {
   };
 
   const saveAdminMenuItem = async (item: MenuItem) => {
-    await posBackend.saveMenuItem(item);
+    await posBackend.saveMenuItem({ ...item, specialPrice: item.specialPrice ?? item.price });
     setMenuCatalog(await posBackend.getMenuItems(DEFAULT_MENU_ITEMS));
   };
 

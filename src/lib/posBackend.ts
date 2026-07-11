@@ -26,6 +26,42 @@ const isMissingTaxColumnError = (error: { message?: string; details?: string; co
   return error.code === 'PGRST204' || text.includes('subtotal') || text.includes('tax_applied') || text.includes('tax_rate') || text.includes('tax_amount');
 };
 
+const isMissingSpecialPriceColumnError = (error: { message?: string; details?: string; code?: string }) => {
+  const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+  return error.code === 'PGRST204' || text.includes('special_price');
+};
+
+const mapMenuItemFromDb = (item: any): MenuItem => ({
+  id: Number(item.id),
+  name: item.name,
+  price: Number(item.price),
+  specialPrice: item.special_price === null || item.special_price === undefined
+    ? Number(item.price)
+    : Number(item.special_price),
+  image: item.image,
+  category: item.category,
+  available: item.available,
+});
+
+const menuItemToDb = (item: MenuItem) => ({
+  id: item.id,
+  name: item.name,
+  price: item.price,
+  special_price: item.specialPrice ?? item.price,
+  image: item.image,
+  category: item.category,
+  available: item.available ?? true,
+});
+
+const menuItemToLegacyDb = (item: MenuItem) => ({
+  id: item.id,
+  name: item.name,
+  price: item.price,
+  image: item.image,
+  category: item.category,
+  available: item.available ?? true,
+});
+
 export const backendMode = isSupabaseConfigured ? 'supabase' : 'local';
 
 export const posBackend = {
@@ -81,23 +117,45 @@ export const posBackend = {
   async getMenuItems(defaultItems: MenuItem[]) {
     if (!supabase) {
       if (!localStorage.getItem('cafeMenuItems')) writeLocal('cafeMenuItems', defaultItems);
-      return readLocal<MenuItem[]>('cafeMenuItems', defaultItems);
+      return readLocal<MenuItem[]>('cafeMenuItems', defaultItems).map((item) => ({
+        ...item,
+        specialPrice: item.specialPrice ?? item.price,
+      }));
     }
-    const { data, error } = await supabase
+    const result = await supabase
       .from('menu_items')
-      .select('id, name, price, image, category, available')
+      .select('id, name, price, special_price, image, category, available')
       .order('id');
+    let data: any[] | null = result.data;
+    let error = result.error;
+    if (error && isMissingSpecialPriceColumnError(error)) {
+      const fallback = await supabase
+        .from('menu_items')
+        .select('id, name, price, image, category, available')
+        .order('id');
+      data = fallback.data;
+      error = fallback.error;
+    }
     if (error) throw error;
     if (!data?.length) {
       const { data: seededItems, error: seedError } = await supabase
         .from('menu_items')
-        .upsert(defaultItems.map((item) => ({ ...item, available: item.available ?? true })), { onConflict: 'id' })
-        .select('id, name, price, image, category, available')
+        .upsert(defaultItems.map(menuItemToDb), { onConflict: 'id' })
+        .select('id, name, price, special_price, image, category, available')
         .order('id');
+      if (seedError && isMissingSpecialPriceColumnError(seedError)) {
+        const fallback = await supabase
+          .from('menu_items')
+          .upsert(defaultItems.map(menuItemToLegacyDb), { onConflict: 'id' })
+          .select('id, name, price, image, category, available')
+          .order('id');
+        if (fallback.error) throw fallback.error;
+        return (fallback.data || []).map(mapMenuItemFromDb);
+      }
       if (seedError) throw seedError;
-      return seededItems as MenuItem[];
+      return (seededItems || []).map(mapMenuItemFromDb);
     }
-    return data as MenuItem[];
+    return data.map(mapMenuItemFromDb);
   },
 
   async saveMenuItem(item: MenuItem) {
@@ -111,11 +169,20 @@ export const posBackend = {
     }
     const { data, error } = await supabase
       .from('menu_items')
-      .upsert({ ...item, available: item.available ?? true }, { onConflict: 'id' })
-      .select('id, name, price, image, category, available')
+      .upsert(menuItemToDb(item), { onConflict: 'id' })
+      .select('id, name, price, special_price, image, category, available')
       .single();
+    if (error && isMissingSpecialPriceColumnError(error)) {
+      const fallback = await supabase
+        .from('menu_items')
+        .upsert(menuItemToLegacyDb(item), { onConflict: 'id' })
+        .select('id, name, price, image, category, available')
+        .single();
+      if (fallback.error) throw fallback.error;
+      return mapMenuItemFromDb(fallback.data);
+    }
     if (error) throw error;
-    return data as MenuItem;
+    return mapMenuItemFromDb(data);
   },
 
   async deleteMenuItem(id: number) {

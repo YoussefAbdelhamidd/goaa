@@ -1650,6 +1650,35 @@
   font-size: 0.9rem;
 }
 
+.menu-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 22px 14px;
+}
+
+.menu-mode-tab {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid rgba(74, 43, 30, 0.12);
+  background: #fffaf6;
+  color: #4a2b1e;
+  padding: 0 14px;
+  font-size: 0.9rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.menu-mode-tab:hover {
+  background: #fff3e9;
+}
+
+.menu-mode-tab.active {
+  background: #147a49;
+  border-color: #147a49;
+  color: #fffaf6;
+}
+
 .category-buttons {
   gap: 8px;
   padding: 0 22px 14px;
