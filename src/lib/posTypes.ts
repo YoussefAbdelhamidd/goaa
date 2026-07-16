@@ -34,6 +34,7 @@ export interface Order {
   taxRate?: number;
   taxAmount?: number;
   timestamp: number;
+  businessDate?: string;
   status: 'pending' | 'paid';
   table?: number | 'to-go';
   cashierId?: string;
@@ -51,6 +52,7 @@ export interface SaleRecord {
   taxRate?: number;
   taxAmount?: number;
   paidAt: number;
+  businessDate?: string;
   paymentMethod: PaymentMethod;
 }
 

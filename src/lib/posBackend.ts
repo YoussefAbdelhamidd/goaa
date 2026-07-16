@@ -26,6 +26,11 @@ const isMissingTaxColumnError = (error: { message?: string; details?: string; co
   return error.code === 'PGRST204' || text.includes('subtotal') || text.includes('tax_applied') || text.includes('tax_rate') || text.includes('tax_amount');
 };
 
+const isMissingBusinessDateColumnError = (error: { message?: string; details?: string; code?: string }) => {
+  const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
+  return error.code === 'PGRST204' || text.includes('business_date');
+};
+
 const isMissingSpecialPriceColumnError = (error: { message?: string; details?: string; code?: string }) => {
   const text = `${error.message || ''} ${error.details || ''}`.toLowerCase();
   return error.code === 'PGRST204' || text.includes('special_price');
@@ -261,6 +266,7 @@ export const posBackend = {
       taxRate: order.tax_rate === null || order.tax_rate === undefined ? undefined : Number(order.tax_rate),
       taxAmount: order.tax_amount === null || order.tax_amount === undefined ? undefined : Number(order.tax_amount),
       timestamp: Number(order.timestamp_ms),
+      businessDate: order.business_date ?? undefined,
       status: order.status,
       table: tableValueFromDb(order.table_label),
       cashierId: order.cashier_id,
@@ -268,11 +274,11 @@ export const posBackend = {
     });
     const result = await supabase
       .from('orders')
-      .select('id, items, total, subtotal, tax_applied, tax_rate, tax_amount, timestamp_ms, status, table_label, cashier_id, payment_method')
+      .select('id, items, total, subtotal, tax_applied, tax_rate, tax_amount, timestamp_ms, business_date, status, table_label, cashier_id, payment_method')
       .order('timestamp_ms', { ascending: false });
     let data: any[] | null = result.data;
     let error = result.error;
-    if (error && isMissingTaxColumnError(error)) {
+    if (error && (isMissingTaxColumnError(error) || isMissingBusinessDateColumnError(error))) {
       const fallback = await supabase
         .from('orders')
         .select('id, items, total, timestamp_ms, status, table_label, cashier_id, payment_method')
@@ -309,8 +315,9 @@ export const posBackend = {
       tax_applied: order.taxApplied ?? false,
       tax_rate: order.taxRate ?? 0,
       tax_amount: order.taxAmount ?? 0,
+      business_date: order.businessDate ?? null,
     }, { onConflict: 'id' });
-    if (error && isMissingTaxColumnError(error)) {
+    if (error && (isMissingTaxColumnError(error) || isMissingBusinessDateColumnError(error))) {
       const fallback = await supabase.from('orders').upsert(baseOrderRow, { onConflict: 'id' });
       error = fallback.error;
     }
@@ -357,8 +364,9 @@ export const posBackend = {
       tax_applied: sale.taxApplied ?? false,
       tax_rate: sale.taxRate ?? 0,
       tax_amount: sale.taxAmount ?? 0,
+      business_date: sale.businessDate ?? null,
     });
-    if (error && isMissingTaxColumnError(error)) {
+    if (error && (isMissingTaxColumnError(error) || isMissingBusinessDateColumnError(error))) {
       const fallback = await supabase.from('sales').insert(baseSaleRow);
       error = fallback.error;
     }
@@ -406,15 +414,16 @@ export const posBackend = {
       taxRate: sale.tax_rate === null || sale.tax_rate === undefined ? undefined : Number(sale.tax_rate),
       taxAmount: sale.tax_amount === null || sale.tax_amount === undefined ? undefined : Number(sale.tax_amount),
       paidAt: Number(sale.paid_at_ms),
+      businessDate: sale.business_date ?? undefined,
       paymentMethod: sale.payment_method,
     });
     const result = await supabase
       .from('sales')
-      .select('order_id, cashier_id, table_label, items, total, subtotal, tax_applied, tax_rate, tax_amount, paid_at_ms, payment_method')
+      .select('order_id, cashier_id, table_label, items, total, subtotal, tax_applied, tax_rate, tax_amount, paid_at_ms, business_date, payment_method')
       .order('paid_at_ms', { ascending: false });
     let data: any[] | null = result.data;
     let error = result.error;
-    if (error && isMissingTaxColumnError(error)) {
+    if (error && (isMissingTaxColumnError(error) || isMissingBusinessDateColumnError(error))) {
       const fallback = await supabase
         .from('sales')
         .select('order_id, cashier_id, table_label, items, total, paid_at_ms, payment_method')

@@ -19,6 +19,13 @@ const DEFAULT_USERS: AppUser[] = [
 const isCashPayment = (order: Order) => !order.paymentMethod || order.paymentMethod === 'cash';
 const TAX_RATE = 0.14;
 const roundMoney = (amount: number) => Math.round(amount * 100) / 100;
+const toLocalDateValue = (timestamp = Date.now()) => {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const DEFAULT_MENU_ITEMS: MenuItem[] = [
   // Hot Drinks
@@ -846,7 +853,7 @@ function App() {
       difference,
       ordersCount: orders.length,
       paidOrdersCount: paidOrders.length,
-      date: new Date().toISOString().split('T')[0],
+      date: toLocalDateValue(shiftStartTime ?? shiftEndTime),
     };
 
     await posBackend.recordShift(shiftData);
@@ -876,9 +883,16 @@ function App() {
     if (editingOrderId) {
       // For editing existing orders, directly update without showing modal
       const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const now = Date.now();
       const updatedOrders = orders.map(order =>
         order.id === editingOrderId
-          ? { ...order, items: [...cart], total, timestamp: Date.now() }
+          ? {
+              ...order,
+              items: [...cart],
+              total,
+              timestamp: now,
+              businessDate: order.businessDate ?? toLocalDateValue(shiftStartTime ?? now),
+            }
           : order
       );
       setOrders(updatedOrders);
@@ -896,12 +910,14 @@ function App() {
     if (!selectedTable) return;
 
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const now = Date.now();
+    const businessDate = toLocalDateValue(shiftStartTime ?? now);
 
     if (editingOrderId) {
       // Update existing order
       const updatedOrders = orders.map(order =>
         order.id === editingOrderId
-          ? { ...order, items: [...cart], total, timestamp: Date.now() }
+          ? { ...order, items: [...cart], total, timestamp: now, businessDate: order.businessDate ?? businessDate }
           : order
       );
       setOrders(updatedOrders);
@@ -911,10 +927,11 @@ function App() {
     } else {
       // Create new order
       const newOrder: Order = {
-        id: Date.now().toString(),
+        id: now.toString(),
         items: [...cart],
         total,
-        timestamp: Date.now(),
+        timestamp: now,
+        businessDate,
         status: 'pending',
         table: selectedTable,
         cashierId,
@@ -942,6 +959,7 @@ function App() {
       taxRate: order.taxRate,
       taxAmount: order.taxAmount,
       paidAt: Date.now(),
+      businessDate: order.businessDate ?? toLocalDateValue(shiftStartTime ?? order.timestamp),
       paymentMethod: order.paymentMethod || 'cash',
     };
     await posBackend.recordSale(saleRecord);

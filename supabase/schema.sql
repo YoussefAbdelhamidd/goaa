@@ -38,6 +38,7 @@ create table if not exists public.orders (
   tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0),
   tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0),
   timestamp_ms bigint not null,
+  business_date date,
   status text not null check (status in ('pending', 'paid')),
   table_label text,
   cashier_id text,
@@ -57,6 +58,7 @@ create table if not exists public.sales (
   tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0),
   tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0),
   paid_at_ms bigint not null,
+  business_date date,
   payment_method text not null check (payment_method in ('cash', 'card', 'instapay')),
   created_at timestamptz not null default now()
 );
@@ -65,11 +67,13 @@ alter table public.orders add column if not exists subtotal numeric(10, 2) check
 alter table public.orders add column if not exists tax_applied boolean not null default false;
 alter table public.orders add column if not exists tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0);
 alter table public.orders add column if not exists tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0);
+alter table public.orders add column if not exists business_date date;
 
 alter table public.sales add column if not exists subtotal numeric(10, 2) check (subtotal >= 0);
 alter table public.sales add column if not exists tax_applied boolean not null default false;
 alter table public.sales add column if not exists tax_rate numeric(5, 4) not null default 0 check (tax_rate >= 0);
 alter table public.sales add column if not exists tax_amount numeric(10, 2) not null default 0 check (tax_amount >= 0);
+alter table public.sales add column if not exists business_date date;
 
 alter table public.menu_items add column if not exists special_price numeric(10, 2) check (special_price >= 0);
 

@@ -24,6 +24,7 @@ type AdminTab = 'reports' | 'orders' | 'users' | 'menu' | 'offers';
 type AdminOrderRow = {
   id: string;
   timestamp: number;
+  businessDate?: string;
   cashierId?: string;
   table?: number | 'to-go';
   status: 'pending' | 'paid';
@@ -160,6 +161,41 @@ const matchesDateFilter = (timestamp: number, dateFilter: DateFilter, customDate
   return timestamp >= cutoff;
 };
 
+const matchesBusinessDateFilter = (
+  businessDate: string | undefined,
+  timestamp: number,
+  dateFilter: DateFilter,
+  customDate: string
+) => {
+  if (!businessDate) return matchesDateFilter(timestamp, dateFilter, customDate);
+  if (dateFilter === 'all') return true;
+  if (dateFilter === 'custom') return businessDate === customDate;
+
+  const businessDateTimestamp = dateInputToTimestamp(businessDate);
+
+  if (dateFilter === 'today') {
+    return businessDate === toDateInputValue();
+  }
+
+  if (dateFilter === 'yesterday') {
+    const yesterday = addDays(dateInputToTimestamp(toDateInputValue()), -1);
+    return businessDate === toDateInputValue(new Date(yesterday));
+  }
+
+  const cutoff = dateFilter === 'week' ? startOfWeek() : startOfMonth();
+  return businessDateTimestamp >= cutoff;
+};
+
+const shiftBusinessDateFor = (timestamp: number, cashierId: string | undefined, shifts: ShiftRecord[]) => {
+  const matchingShift = shifts.find((shift) =>
+    (!cashierId || shift.cashierId === cashierId) &&
+    shift.shiftStart !== null &&
+    timestamp >= shift.shiftStart &&
+    timestamp <= shift.shiftEnd
+  );
+  return matchingShift?.date;
+};
+
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBack,
   users,
@@ -188,13 +224,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [message, setMessage] = useState('');
 
   const filteredSales = useMemo(() => {
-    return salesHistory.filter((sale) => matchesDateFilter(sale.paidAt, dateFilter, customDate));
-  }, [salesHistory, dateFilter, customDate]);
+    return salesHistory.filter((sale) => {
+      const businessDate = sale.businessDate ?? shiftBusinessDateFor(sale.paidAt, sale.cashierId, shifts);
+      return matchesBusinessDateFilter(businessDate, sale.paidAt, dateFilter, customDate);
+    });
+  }, [salesHistory, shifts, dateFilter, customDate]);
 
   const filteredOrders = useMemo<AdminOrderRow[]>(() => {
     const paidRows = salesHistory.map((sale) => ({
       id: sale.orderId,
       timestamp: sale.paidAt,
+      businessDate: sale.businessDate ?? shiftBusinessDateFor(sale.paidAt, sale.cashierId, shifts),
       cashierId: sale.cashierId,
       table: sale.table,
       status: 'paid' as const,
@@ -206,6 +246,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       .map((order) => ({
         id: order.id,
         timestamp: order.timestamp,
+        businessDate: order.businessDate ?? shiftBusinessDateFor(order.timestamp, order.cashierId, shifts),
         cashierId: order.cashierId,
         table: order.table,
         status: order.status,
@@ -214,9 +255,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }));
 
     return [...paidRows, ...pendingRows]
-      .filter((order) => matchesDateFilter(order.timestamp, dateFilter, customDate))
+      .filter((order) => matchesBusinessDateFilter(order.businessDate, order.timestamp, dateFilter, customDate))
       .sort((a, b) => b.timestamp - a.timestamp);
-  }, [orders, salesHistory, dateFilter, customDate]);
+  }, [orders, salesHistory, shifts, dateFilter, customDate]);
 
   const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
   const totalOrders = filteredSales.length;
