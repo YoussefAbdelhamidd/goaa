@@ -3,14 +3,13 @@ import Login from './components/Login';
 import CashierView from './components/CashierView';
 import OrdersView from './components/OrdersView';
 import AdminDashboard from './components/AdminDashboard';
-import ProjectPaused from './components/ProjectPaused';
+import InvoiceThankYou from './components/InvoiceThankYou';
 import goobaTextLogo from './assets/GOOBA-text.svg';
 import { posBackend } from './lib/posBackend';
 import type { AppUser, MenuItem, CartItem, Order, PaymentMethod, SaleRecord, ShiftRecord, Offer } from './lib/posTypes';
 import './App.css';
 
-/** Set to false to restore normal app access. */
-const PROJECT_PAUSED = true;
+const INVOICE_THANKYOU_KEY = 'googleInvoiceThankYouSeen';
 
 const DEFAULT_USERS: AppUser[] = [
   { id: 'admin-omar', username: 'Omar', password: '01277554354', role: 'admin', active: true },
@@ -729,8 +728,16 @@ function App() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [salesHistory, setSalesHistory] = useState<SaleRecord[]>([]);
   const [shifts, setShifts] = useState<ShiftRecord[]>([]);
+  const [showInvoiceThankYou, setShowInvoiceThankYou] = useState(
+    () => localStorage.getItem(INVOICE_THANKYOU_KEY) !== '1'
+  );
 
   const t = translations[language];
+
+  const dismissInvoiceThankYou = () => {
+    localStorage.setItem(INVOICE_THANKYOU_KEY, '1');
+    setShowInvoiceThankYou(false);
+  };
 
   // Resume an active cashier session (and its orders) if one is already open on this device
   useEffect(() => {
@@ -1215,12 +1222,9 @@ function App() {
     setOffers(await posBackend.getOffers());
   };
 
-  if (PROJECT_PAUSED) {
-    return <ProjectPaused />;
-  }
-
   return (
     <div className="app" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      {showInvoiceThankYou && <InvoiceThankYou onClose={dismissInvoiceThankYou} />}
       {showCheckoutModal && (
         <CheckoutModal
           orders={orders}
